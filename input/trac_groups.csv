@@ -1,0 +1,178 @@
+ukprn,trac_group,trac_label
+# OfS TRAC peer-group classification, 2022-23 (carried into 2023-24 framework).
+# Source: TRAC Annex 4.1b - https://www.trac.ac.uk/wp-content/uploads/2025/06/Annex-4.1b-TRAC-Peer-Groups-2023-24.pdf
+#
+# Criteria (research income as share of total income, 2012-13 baseline):
+#   A - Medical school AND research income >= 20%
+#   B - Research income >= 15% (no medical school OR below 20% threshold)
+#   C - Research income 5-15%
+#   D - Research income < 5% AND total income > GBP 150M
+#   E - Research income < 5% AND total income <= GBP 150M
+#   F - Specialist music/arts teaching institutions
+#
+# 160 OfS-classified institutions total. Providers in the HE-BCI panel without
+# a TRAC mapping (e.g. private providers, alternative providers) render as
+# "TRAC: N/A" in the dashboard.
+#
+# Lines starting with # and blank lines are ignored.
+
+10006840,A,Group A
+10007786,A,Group A
+10007788,A,Group A
+10007792,A,Group A
+10003270,A,Group A
+10003324,A,Group A
+10003645,A,Group A
+10007768,A,Group A
+10007795,A,Group A
+10007796,A,Group A
+10006842,A,Group A
+10003958,A,Group A
+10007784,A,Group A
+10007771,A,Group A
+10007798,A,Group A
+10007799,A,Group A
+10007154,A,Group A
+10007774,A,Group A
+10007775,A,Group A
+10007157,A,Group A
+10007158,A,Group A
+10007782,A,Group A
+10007806,A,Group A
+10007163,A,Group A
+10007167,A,Group A
+10007783,A,Group A
+10007852,A,Group A
+10007790,A,Group A
+10007794,A,Group A
+10007803,A,Group A
+10007814,A,Group A
+10007855,A,Group A
+10005343,A,Group A
+10007759,B,Group B
+10007850,B,Group B
+10007760,B,Group B
+10000961,B,Group B
+10007822,B,Group B
+10007143,B,Group B
+10007789,B,Group B
+10007791,B,Group B
+10007767,B,Group B
+10007150,B,Group B
+10004063,B,Group B
+10004113,B,Group B
+10007802,B,Group B
+10005553,B,Group B
+10007779,B,Group B
+10007160,B,Group B
+10007764,B,Group B
+10005700,B,Group B
+10007804,B,Group B
+10007805,B,Group B
+10007856,B,Group B
+10007857,B,Group B
+10007807,B,Group B
+10007785,C,Group C
+10000886,C,Group C
+10001478,C,Group C
+10001883,C,Group C
+10002718,C,Group C
+10007146,C,Group C
+10007147,C,Group C
+10007148,C,Group C
+10007149,C,Group C
+10007151,C,Group C
+10003957,C,Group C
+10007773,C,Group C
+10007780,C,Group C
+10007801,C,Group C
+10007155,C,Group C
+10007156,C,Group C
+10007164,C,Group C
+10007165,C,Group C
+10007849,C,Group C
+10007772,C,Group C
+10007762,C,Group C
+10005337,C,Group C
+10005500,C,Group C
+10000291,D,Group D
+10007140,D,Group D
+10007141,D,Group D
+10001726,D,Group D
+10007144,D,Group D
+10003678,D,Group D
+10003861,D,Group D
+10004180,D,Group D
+10004351,D,Group D
+10001282,D,Group D
+10004797,D,Group D
+10004930,D,Group D
+10005790,D,Group D
+10007166,D,Group D
+10007793,D,Group D
+10000163,E,Group E
+10000571,E,Group E
+10007152,E,Group E
+10000712,E,Group E
+10007811,E,Group E
+10006841,E,Group E
+10000824,E,Group E
+10000975,E,Group E
+10001143,E,Group E
+10007848,E,Group E
+10007137,E,Group E
+10007842,E,Group E
+10007851,E,Group E
+10007823,E,Group E
+10007145,E,Group E
+10040812,E,Group E
+10080811,E,Group E
+10003863,E,Group E
+10003956,E,Group E
+10007797,E,Group E
+10007769,E,Group E
+10004048,E,Group E
+10004078,E,Group E
+10007832,E,Group E
+10007138,E,Group E
+10000936,E,Group E
+10007776,E,Group E
+10005545,E,Group E
+10006022,E,Group E
+10037449,E,Group E
+10007843,E,Group E
+10006299,E,Group E
+10014001,E,Group E
+10007159,E,Group E
+10007161,E,Group E
+10006566,E,Group E
+10003614,E,Group E
+10007139,E,Group E
+10007657,E,Group E
+10007713,E,Group E
+10007114,E,Group E
+10007800,E,Group E
+10007854,E,Group E
+10007858,E,Group E
+10007833,E,Group E
+10000385,F,Group F
+10007162,F,Group F
+10007761,F,Group F
+10006427,F,Group F
+10008640,F,Group F
+10007825,F,Group F
+10003854,F,Group F
+10003945,F,Group F
+10004511,F,Group F
+10004775,F,Group F
+10005127,F,Group F
+10005389,F,Group F
+10005523,F,Group F
+10007835,F,Group F
+10007816,F,Group F
+10007777,F,Group F
+10007778,F,Group F
+10007837,F,Group F
+10008017,F,Group F
+10002681,F,Group F
+10005561,F,Group F

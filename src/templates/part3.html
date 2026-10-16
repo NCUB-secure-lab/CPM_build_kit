@@ -1,0 +1,2936 @@
+<script>
+const D = __DATA__;
+
+/* ---------- design tokens ---------- */
+const C = {pd:'#3e1151',pm:'#60537f',pl:'#aaa5bb',gl:'#d8d8da',bg:'#f7f7f8',
+           pink:'#ff0090',blue:'#0085ca',yellow:'#fedb00',green:'#00B388'};
+const FONT = {family:'"Segoe UI",system-ui,sans-serif',color:'#241032'};
+const BASE = {font:FONT, paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)',
+  margin:{l:60,r:20,t:10,b:50}, hoverlabel:{font:{family:FONT.family,size:13}},
+  legend:{orientation:'h',y:-0.18,font:{size:12}},
+  xaxis:{gridcolor:'#eeebf1',zerolinecolor:'#d8d8da'},
+  yaxis:{gridcolor:'#eeebf1',zerolinecolor:'#d8d8da'}};
+const CFG = {responsive:true, displaylogo:false,
+  modeBarButtonsToRemove:['lasso2d','select2d','autoScale2d']};
+const L = o => Object.assign(JSON.parse(JSON.stringify(BASE)), o||{});
+const YRS = D.years;
+const last = a => a[a.length-1], prev = a => a[a.length-2];
+const pct = (a,b) => (a/b-1)*100;
+const fmtM = v => '£'+(v/1000).toFixed(v>=100000?0:1)+'m';
+const fmtN = v => v.toLocaleString('en-GB');
+const deltaHtml = p => {
+  if(p===null||!isFinite(p)) return '';
+  const cls = p>1?'up':(p<-1?'down':'flat');
+  const sym = p>1?'▲':(p<-1?'▼':'•');
+  return `<div class="d ${cls}">${sym} ${Math.abs(p).toFixed(1)}% vs prior year</div>`;
+};
+
+/* ---------- tab switching (lazy render) ---------- */
+const rendered = {};
+const renderers = {home:renderHome, context:renderContext, framework:renderFramework,
+                   trends:renderTrends, explorer:renderExplorer,
+                   cases:renderCases};
+function go(tab, subOpt){
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
+  document.querySelectorAll('.tab').forEach(s=>s.classList.toggle('show',s.id==='tab-'+tab));
+  if(!rendered[tab]){ rendered[tab]=true; renderers[tab](); }
+  // Deep-link into a Trends sub-tab if requested (e.g. from Home → Skills tile)
+  if(tab==='trends' && subOpt) selectTrendSub(subOpt);
+  window.scrollTo({top:0});
+}
+function selectTrendSub(which){
+  document.querySelectorAll('#trendsSubnav button').forEach(b=>b.classList.toggle('active',b.dataset.trend===which));
+  document.querySelectorAll('#tab-trends .trendpanel').forEach(p=>p.classList.toggle('show',p.id==='trend-'+which));
+}
+function renderTrends(){
+  // Wire the top-level Trends sub-nav (R&I ↔ Skills)
+  document.getElementById('trendsSubnav').addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b||!b.dataset.trend) return;
+    selectTrendSub(b.dataset.trend);
+    // R&I side has lazy renderers of its own — kick them if that side is now active
+    if(b.dataset.trend==='ri' && !rendered._ri){ rendered._ri=true; renderFindings(); }
+  });
+  // First visit: render the R&I side by default
+  if(!rendered._ri){ rendered._ri=true; renderFindings(); }
+}
+document.getElementById('nav').addEventListener('click',e=>{ if(e.target.dataset.tab) go(e.target.dataset.tab); });
+document.querySelectorAll('.tile[data-go]').forEach(t=>t.addEventListener('click',()=>go(t.dataset.go, t.dataset.sub)));
+
+/* ================= HOME ================= */
+function renderHome(){
+  const N = D.national;
+  Plotly.newPlot('heroPulse',[{
+    x:YRS, y:N.real.map(v=>v/1000), type:'scatter', mode:'lines',
+    line:{color:C.pink,width:3,shape:'spline'}, fill:'tozeroy', fillcolor:'rgba(255,0,144,.14)',
+    hovertemplate:'%{x}: £%{y:.0f}m<extra></extra>'
+  }],L({margin:{l:0,r:0,t:6,b:18},height:120,showlegend:false,
+       xaxis:{showgrid:false,tickfont:{color:'#cbb6da',size:10},showline:false},
+       yaxis:{visible:false,rangemode:'tozero'}}),CFG);
+
+  const kpis=[
+    {v:fmtM(last(N.real)), l:'Business collaboration income, 2024/25 (real)', d:pct(last(N.real),prev(N.real)), cls:''},
+    {v:fmtN(last(N.n_sme)+last(N.n_lc)), l:'Business interactions, 2024/25', d:pct(last(N.n_sme)+last(N.n_lc), prev(N.n_sme)+prev(N.n_lc)), cls:'b'},
+    {v:fmtN(last(N.spin)), l:'Spinouts surviving 3+ years (sum across providers)', d:pct(last(N.spin),prev(N.spin)), cls:'g'},
+    {v:fmtM(last(N.lic)), l:'Licensing income, 2024/25 (real)', d:pct(last(N.lic),prev(N.lic)), cls:'y'}];
+  document.getElementById('homeKpis').innerHTML = kpis.map(k=>
+    `<div class="kpi ${k.cls}"><div class="v">${k.v}</div><div class="l">${k.l}</div>${deltaHtml(k.d)}</div>`).join('');
+}
+
+/* ================= CONTEXT (live ONS/OECD data when fetched; cached otherwise) ================= */
+function renderContext(){
+  const X=D.ctx;
+  const upd=document.getElementById('ctxUpdated');
+  if(upd) upd.textContent='Data refreshed: '+X.meta.updated+(X.meta.live&&X.meta.live.length?' · live: '+X.meta.live.join('; '):'');
+  const months=X.gdpMonthly.months, serv=X.gdpMonthly.services,
+        prod=X.gdpMonthly.production, cons=X.gdpMonthly.construction;
+  const net = serv.map((v,i)=>+(v+prod[i]+cons[i]).toFixed(2));
+  Plotly.newPlot('chGdp',[
+    {x:months,y:serv,name:'Services',type:'bar',marker:{color:C.pm}},
+    {x:months,y:prod,name:'Production',type:'bar',marker:{color:C.pink}},
+    {x:months,y:cons,name:'Construction',type:'bar',marker:{color:C.blue}},
+    {x:months,y:net,name:'Net GDP growth',type:'scatter',mode:'lines+markers',
+     line:{color:C.pd,width:2.5},marker:{size:6}}
+  ],L({barmode:'relative',yaxis:{ticksuffix:'%',gridcolor:'#eeebf1',zerolinecolor:'#9a90a6',title:{text:'Month-on-month growth',font:{size:12}}},
+       hovermode:'x unified'}),CFG);
+
+  const q=X.intl.quarters, intl=X.intl.series;
+  const ic={UK:C.blue,EU:C.pd,'United States':C.green,Japan:C.pink};
+  Plotly.newPlot('chIntl',Object.keys(intl).map(k=>({
+    x:q,y:intl[k],name:k,type:'scatter',mode:'lines+markers',
+    line:{width:k==='UK'?4:2,color:ic[k]||C.pl},marker:{size:k==='UK'?7:5},
+    opacity:k==='UK'?1:.75,connectgaps:false
+  })),L({yaxis:{ticksuffix:'%',zerolinecolor:'#9a90a6'},hovermode:'x unified'}),CFG);
+
+  const dv=X.deficit.values;
+  Plotly.newPlot('chDeficit',[{
+    x:X.deficit.years,y:dv,type:'bar',marker:{color:dv.map(v=>v>=40?C.pink:(v>=33?C.pm:C.pl))},
+    text:dv.map(v=>v.toFixed(0)+'%'),textposition:'outside',textfont:{size:13,color:C.pd},
+    hovertemplate:'%{x}: %{y:.1f}% of universities in deficit<extra></extra>'
+  }],L({yaxis:{ticksuffix:'%',range:[0,Math.max(...dv)*1.15],title:{text:'Universities operating at a deficit',font:{size:12}}},showlegend:false}),CFG);
+
+  const B=X.berd;
+  Plotly.newPlot('chBerd',[
+    {x:B.fyears.concat([...B.fyears].reverse()),y:B.up.concat([...B.lo].reverse()),fill:'toself',
+     fillcolor:'rgba(255,0,144,.10)',line:{width:0},hoverinfo:'skip',name:'95% CI',showlegend:true},
+    {x:B.years,y:B.values,name:'Business R&D spend',type:'scatter',mode:'lines+markers',line:{color:C.pd,width:3},marker:{size:7}},
+    {x:B.fyears,y:B.fc,name:'Forecast',type:'scatter',mode:'lines',line:{color:C.pink,width:2.5,dash:'dot'}}
+  ],L({yaxis:{tickprefix:'£',ticksuffix:'bn'},hovermode:'x unified'}),CFG);
+
+  const vcol={'United States':C.green,'United Kingdom':C.blue,France:C.pd,Germany:C.yellow,Italy:C.pink};
+  Plotly.newPlot('chVc',Object.keys(X.vc.series).map(k=>({
+    x:X.vc.years,y:X.vc.series[k],name:k,type:'scatter',mode:'lines',
+    line:{width:k==='United Kingdom'?4:2,color:vcol[k]||C.pl},opacity:k==='United Kingdom'?1:.8,
+    hovertemplate:k+': %{y:.2f}% of GDP<extra></extra>'
+  })),L({yaxis:{ticksuffix:'%'},hovermode:'x unified'}),CFG);
+}
+
+/* ================= FRAMEWORK ================= */
+function renderFramework(){
+  const lab=['SMEs','Large businesses','Consultancy','Facilities & equipment','Contract research','IP licensing'];
+  Plotly.newPlot('chPillarFlow',[{
+    type:'sankey',orientation:'h',
+    node:{label:lab,pad:22,thickness:18,
+      color:[C.blue,C.pd,C.pm,C.green,C.pink,C.yellow],
+      line:{width:0},
+      hovertemplate:'%{label}: £%{value:.0f}m<extra></extra>'},
+    link:{source:[0,0,0,0,1,1,1,1],target:[2,3,4,5,2,3,4,5],
+      value:[90,87,86,86,126,82,636,146],
+      color:['rgba(0,133,202,.30)','rgba(0,133,202,.30)','rgba(0,133,202,.30)','rgba(0,133,202,.30)',
+             'rgba(62,17,81,.28)','rgba(62,17,81,.28)','rgba(62,17,81,.28)','rgba(62,17,81,.28)'],
+      hovertemplate:'%{source.label} → %{target.label}: £%{value:.0f}m<extra></extra>'}
+  }],L({margin:{l:10,r:10,t:10,b:10},height:300}),CFG);
+  const note=document.querySelector('#tab-framework .section .note');
+  renderGtrTable();
+  if(note) note.innerHTML='Follow the money, 2024/25 (CPD & training excluded): £'+ (90+87+86+86) +'m of business income comes from SMEs and £'+(126+82+636+146)+'m from large businesses, across four streams — consultancy, facilities & equipment, contract research and IP licensing. Contract research dominates large-business income; licensing income is roughly evenly split. The GtR pillar adds the publicly co-funded flows this picture misses.';
+}
+
+/* ---------- GtR pillar-4 indicator table (framework tab) ---------- */
+const GTR_CAT_ORDER=['Volume & Scale','Intensity & Productivity','Innovation Depth'];
+function renderGtrTable(){
+  const t=document.getElementById('gtrTable'); if(!t||t.innerHTML) return;
+  let html='<thead><tr><th style="width:64px">ID</th><th>Indicator</th><th class="c">Value</th><th class="c" style="width:110px">Unit</th></tr></thead><tbody>';
+  for(const cat of GTR_CAT_ORDER){
+    html+=`<tr class="cat"><td colspan="4">${cat}</td></tr>`;
+    for(const r of D.gtr.indicators.filter(x=>x.category===cat)){
+      html+=`<tr class="data" title="${(r.note||'').replace(/"/g,'&quot;')}">
+        <td style="font-weight:700;color:var(--purple-mid)">${r.id}</td><td>${r.name}</td>
+        <td class="c" style="font-weight:700">${r.value}</td><td class="c" style="font-size:12px;color:#6d6478">${r.unit}</td></tr>`;
+    }
+  }
+  t.innerHTML=html+'</tbody>';
+}
+
+/* ================= FINDINGS ================= */
+const REGION_GROUPS={
+  'Scotland':['Devolved nations',C.pm],'Northern Ireland':['Devolved nations',C.pm],'Wales':['Devolved nations',C.pm],
+  'London':['Southern England',C.pink],'South East':['Southern England',C.pink],'South West':['Southern England',C.pink],
+  'East of England':['Midlands & East',C.blue],'East Midlands':['Midlands & East',C.blue],'West Midlands':['Midlands & East',C.blue],
+  'North West':['Northern England',C.green],'North East':['Northern England',C.green],'Yorkshire and The Humber':['Northern England',C.green]};
+const CLUSTERS=['Very large and highly research intensive','Large and research intensive',
+  'Large with teaching and research focus','Small and mid-size, teaching focus','STEM specialists',
+  'Scotland','Wales','Northern Ireland','Unclassified'];
+const CLUSTER_COL={'Very large and highly research intensive':C.pd,'Large and research intensive':C.pink,
+  'Large with teaching and research focus':C.blue,'Small and mid-size, teaching focus':C.green,
+  'STEM specialists':C.yellow,'Scotland':C.pm,'Wales':'#b86bd4','Northern Ireland':'#7a4f9e','Unclassified':C.pl};
+
+function renderFindings(){
+  const N=D.national;
+  const kpis=[
+    {v:fmtM(last(N.real)),l:'Real BCI 2024/25 — '+(pct(last(N.real),N.real[4])).toFixed(0)+'% vs pre-Covid (2018/19)',d:pct(last(N.real),prev(N.real)),cls:''},
+    {v:fmtN(last(N.n_sme)),l:'SME interactions, 2024/25',d:pct(last(N.n_sme),prev(N.n_sme)),cls:'b'},
+    {v:fmtN(last(N.n_lc)),l:'Large business interactions, 2024/25',d:pct(last(N.n_lc),prev(N.n_lc)),cls:'b'},
+    {v:fmtN(last(N.lic_n)),l:'Licences granted, 2024/25',d:pct(last(N.lic_n),prev(N.lic_n)),cls:'y'}];
+  document.getElementById('findKpis').innerHTML=kpis.map(k=>
+    `<div class="kpi ${k.cls}"><div class="v">${k.v}</div><div class="l">${k.l}</div>${deltaHtml(k.d)}</div>`).join('');
+
+  /* BCI trend: stacked SME / LC */
+  Plotly.newPlot('chBciTrend',[
+    {x:YRS,y:N.real_sme.map(v=>v/1000),name:'From SMEs',stackgroup:'a',mode:'lines',
+     line:{width:.5,color:C.blue},fillcolor:'rgba(0,133,202,.45)',hovertemplate:'SMEs: £%{y:.0f}m<extra></extra>'},
+    {x:YRS,y:N.real_lc.map(v=>v/1000),name:'From large businesses',stackgroup:'a',mode:'lines',
+     line:{width:.5,color:C.pd},fillcolor:'rgba(62,17,81,.55)',hovertemplate:'Large: £%{y:.0f}m<extra></extra>'},
+    {x:YRS,y:N.real.map(v=>v/1000),name:'Total',mode:'lines+markers',
+     line:{color:C.pink,width:3},marker:{size:6},hovertemplate:'Total: £%{y:.0f}m<extra></extra>'}
+  ],L({yaxis:{tickprefix:'£',ticksuffix:'m'},hovermode:'x unified'}),CFG);
+
+  /* interactions */
+  Plotly.newPlot('chInteractions',[
+    {x:YRS,y:N.n_sme,name:'SME interactions',mode:'lines+markers',line:{color:C.blue,width:3},marker:{size:6}},
+    {x:YRS,y:N.n_lc,name:'Large business interactions',mode:'lines+markers',line:{color:C.pd,width:3},marker:{size:6}}
+  ],L({hovermode:'x unified',yaxis:{rangemode:'tozero'}}),CFG);
+
+  /* funnel plot */
+  const traces={};
+  for(const k in D.growth){
+    const u=D.unis[k], g=D.growth[k], size=u.real[YRS.length-2];
+    const cl=u.cluster;
+    (traces[cl]=traces[cl]||{x:[],y:[],t:[]});
+    traces[cl].x.push(size/1000); traces[cl].y.push(Math.max(-100,Math.min(200,g)));
+    traces[cl].t.push(`<b>${u.name}</b><br>${u.region}<br>2023/24 BCI: ${fmtM(size)}<br>Growth: ${g>0?'+':''}${g.toFixed(1)}%`);
+  }
+  const ftr=CLUSTERS.filter(c=>traces[c]).map(c=>({
+    x:traces[c].x,y:traces[c].y,text:traces[c].t,name:c,type:'scatter',mode:'markers',
+    marker:{size:9,color:CLUSTER_COL[c],opacity:.78,line:{width:1,color:'#fff'}},
+    hovertemplate:'%{text}<extra></extra>'}));
+  Plotly.newPlot('chFunnel',ftr,L({
+    xaxis:{type:'log',title:{text:'Real BCI 2023/24 (£m, log scale)',font:{size:12}},gridcolor:'#eeebf1'},
+    yaxis:{title:{text:'Real BCI growth 2023/24 → 2024/25 (%)',font:{size:12}},ticksuffix:'%',zerolinecolor:'#9a90a6',zerolinewidth:2},
+    legend:{orientation:'h',y:-0.22},height:520,
+    shapes:[{type:'line',x0:0.0002,x1:300,y0:0,y1:0,line:{color:'#9a90a6',width:1,dash:'dot'}}]
+  }),CFG);
+
+  /* regional box */
+  const order=['Scotland','Northern Ireland','Wales','London','South East','South West',
+    'East of England','East Midlands','West Midlands','North West','North East','Yorkshire and The Humber'];
+  const btr=order.map(r=>{
+    const ys=[],ts=[];
+    for(const k in D.growth){ const u=D.unis[k];
+      if(u.region===r){ ys.push(Math.max(-100,Math.min(200,D.growth[k]))); ts.push(u.name); } }
+    return {y:ys,text:ts,name:r,type:'box',boxpoints:'all',jitter:.5,pointpos:0,
+      marker:{color:REGION_GROUPS[r][1],size:5,opacity:.7},
+      line:{color:REGION_GROUPS[r][1]},fillcolor:REGION_GROUPS[r][1]+'22',
+      hovertemplate:'%{text}: %{y:.1f}%<extra>'+r+'</extra>'};
+  });
+  Plotly.newPlot('chRegionBox',btr,L({
+    showlegend:false,height:520,
+    yaxis:{title:{text:'Real BCI growth 2023/24 → 2024/25 (%)',font:{size:12}},ticksuffix:'%',zerolinecolor:'#9a90a6',zerolinewidth:2},
+    xaxis:{tickangle:-30,tickfont:{size:11}}}),CFG);
+
+  /* income mix shares (business clients only; CPD excluded) */
+  const streams=[['Consultancy',D.national.consult,C.blue],
+                 ['Facilities & equipment',D.national.fe,C.green],
+                 ['Contract research',D.national.contract,C.pink]];
+  const stot=YRS.map((_,i)=>streams.reduce((a,[,arr])=>a+arr[i],0));
+  Plotly.newPlot('chMix',streams.map(([name,arr,col])=>({
+    x:YRS,y:arr.map((v,i)=>v/stot[i]*100),name,stackgroup:'m',mode:'lines',
+    line:{width:.5,color:col},fillcolor:col+'77',
+    customdata:arr.map(v=>v/1000),
+    hovertemplate:name+': %{y:.1f}% (£%{customdata:.0f}m)<extra></extra>'
+  })),L({yaxis:{ticksuffix:'%',range:[0,100]},hovermode:'x unified'}),CFG);
+
+  /* commercialisation */
+  Plotly.newPlot('chCommerc',[
+    {x:YRS,y:N.lic.map(v=>v/1000),name:'Licensing income (real)',type:'bar',marker:{color:C.pm},yaxis:'y'},
+    {x:YRS,y:N.spin,name:'Spinouts surviving 3+ yrs',mode:'lines+markers',line:{color:C.pink,width:3},marker:{size:6},yaxis:'y2'}
+  ],L({yaxis:{tickprefix:'£',ticksuffix:'m',title:{text:'Licensing income',font:{size:11}}},
+       yaxis2:{overlaying:'y',side:'right',title:{text:'Spinouts',font:{size:11}},gridcolor:'rgba(0,0,0,0)'},
+       hovermode:'x unified'}),CFG);
+
+  renderScorecard();
+  initMap();
+  initPareto();
+  initSubnav();
+}
+
+/* ---------- Pareto concentration ---------- */
+function initPareto(){
+  const sel=document.getElementById('paretoMetric');
+  if(!sel) return;
+  sel.addEventListener('change',drawPareto);
+  drawPareto();
+}
+
+function drawPareto(){
+  const key=document.getElementById('paretoMetric').value;
+  const yi=D.years.length-1;
+  const labelMap={
+    real:'business collaboration income',
+    contract:'contract research income',
+    consult:'consultancy income',
+    fe:'facilities & equipment income',
+    lic:'licensing income',
+    ext:'external investment in spinouts'
+  };
+  const metricLabel=labelMap[key]||key;
+
+  // Collect (name, value) for the latest year, filter out null/zero
+  const entries=[];
+  for(const k in D.unis){
+    const u=D.unis[k];
+    const v=u[key]&&u[key][yi];
+    if(v!=null && v>0) entries.push({name:u.name, value:v});
+  }
+  entries.sort((a,b)=>b.value-a.value);
+  const N=entries.length;
+  const total=entries.reduce((s,e)=>s+e.value,0);
+
+  // Pareto curve: cumulative share of providers vs cumulative share of income
+  let cumV=0;
+  const xPct=[0], yPct=[0], hoverNames=[''], hoverVals=[0];
+  for(let i=0;i<N;i++){
+    cumV+=entries[i].value;
+    xPct.push((i+1)/N*100);
+    yPct.push(cumV/total*100);
+    hoverNames.push(entries[i].name);
+    hoverVals.push(entries[i].value/1000);
+  }
+
+  // Reference quantile shares (top 10%, 20%, 50%)
+  const shareAt=(p)=>{
+    const idx=Math.ceil(N*p/100);
+    let s=0;for(let i=0;i<idx;i++)s+=entries[i].value;
+    return total>0?s/total*100:0;
+  };
+  const s10=shareAt(10), s20=shareAt(20), s50=shareAt(50);
+  // Gini coefficient (area between 45° line and Pareto curve, normalised)
+  let area=0;
+  for(let i=1;i<xPct.length;i++){
+    area+=(xPct[i]-xPct[i-1])*(yPct[i]+yPct[i-1])/2;
+  }
+  const gini=Math.max(0,Math.min(1,(area-5000)/5000));   // (areaUnderCurve - 50%) / 50%
+
+  // Build chart: 45° equality line + Pareto curve + reference markers
+  const traces=[
+    {x:[0,100],y:[0,100],name:'Equal distribution',mode:'lines',
+     line:{color:'#aaa5bb',width:1.5,dash:'dash'},hoverinfo:'skip'},
+    {x:xPct,y:yPct,name:'Cumulative share',mode:'lines',
+     line:{color:C.pd,width:3,shape:'spline'},
+     fill:'tonexty',fillcolor:'rgba(255,0,144,.10)',
+     customdata:hoverNames.map((n,i)=>[n,hoverVals[i]]),
+     hovertemplate:'Top %{x:.0f}% of providers<br>capture %{y:.0f}% of '+metricLabel+
+                   '<br><i>%{customdata[0]}</i> added: £%{customdata[1]:.1f}m<extra></extra>'},
+    {x:[10,20,50],y:[s10,s20,s50],name:'Quantile markers',mode:'markers+text',
+     marker:{color:C.pink,size:11,line:{color:'#fff',width:2}},
+     text:['Top 10%: '+s10.toFixed(0)+'%','Top 20%: '+s20.toFixed(0)+'%','Top 50%: '+s50.toFixed(0)+'%'],
+     textposition:['top right','top right','top right'],
+     textfont:{size:11,color:C.pd},
+     hovertemplate:'%{text}<extra></extra>'}
+  ];
+  Plotly.newPlot('chPareto',traces,L({
+    height:430,
+    xaxis:{title:{text:'Cumulative share of providers (ranked highest to lowest)',font:{size:11}},
+           ticksuffix:'%',range:[0,100],dtick:10},
+    yaxis:{title:{text:'Cumulative share of '+metricLabel,font:{size:11}},
+           ticksuffix:'%',range:[0,102]},
+    showlegend:false, margin:{l:80,r:30,t:10,b:60}}),CFG);
+
+  // Plain-English narrative
+  const narr=document.getElementById('paretoNarrative');
+  if(narr){
+    // Find which threshold matches the "80/X" question — what % of providers
+    // capture 80% of the metric?
+    let idx80=xPct.findIndex((_,i)=>i>0 && yPct[i]>=80);
+    const pct80=idx80>0?xPct[idx80]:100;
+    const concentration =
+      s10>=70?'extreme':s10>=55?'very high':s10>=40?'high':s10>=30?'moderate':'modest';
+    narr.innerHTML=
+      `<b>How to read this chart.</b> Each point on the curve answers: "if you ranked all `+
+      `${N} providers reporting <b>${metricLabel}</b> from largest to smallest, what fraction of the UK total `+
+      `do the biggest <i>n</i>% capture?". The dashed diagonal is what perfect equality would look like — every `+
+      `provider contributing the same. The further the curve bows above the diagonal, the more the income is `+
+      `concentrated in a few institutions.<br><br>`+
+      `<b>For ${metricLabel} in ${D.years[yi]}:</b> the top <b>10%</b> of providers (${Math.ceil(N*0.10)} institutions) account for `+
+      `<b>${s10.toFixed(0)}%</b> of the total — concentration is <b>${concentration}</b>. The top 20% capture <b>${s20.toFixed(0)}%</b>, `+
+      `and the top 50% capture <b>${s50.toFixed(0)}%</b>. ${pct80<100?`The classic "80/20" line is at <b>${pct80.toFixed(0)}/80</b> here — meaning ${pct80.toFixed(0)}% of providers produce 80% of this income.`:''} `+
+      `The implied Gini coefficient is <b>${gini.toFixed(2)}</b> — for context, 0.00 would be perfect equality, 1.00 would mean a single provider captures everything.`;
+  }
+}
+
+/* ---------- findings sub-tabs ---------- */
+const subRendered={overview:true};
+const subRenderers={spinouts:renderSpinouts,cagr:renderCagr,gtr:renderGtr};
+function initSubnav(){
+  document.getElementById('findSubnav').addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    const sub=b.dataset.sub;
+    document.querySelectorAll('#findSubnav button').forEach(x=>x.classList.toggle('active',x===b));
+    document.querySelectorAll('#trend-ri .subpanel').forEach(p=>p.classList.toggle('show',p.id==='sub-'+sub));
+    if(!subRendered[sub]){subRendered[sub]=true;subRenderers[sub]();}
+    else document.querySelectorAll('#sub-'+sub+' .chart').forEach(el=>{if(el.data)Plotly.Plots.resize(el);});
+  });
+}
+
+/* ---------- spinout activity sub-page ---------- */
+/* ---------- Real vs nominal toggle for spinout external capital ---------- */
+let CAP_BASIS='real';                         // 'real' | 'nominal' | 'both'
+const capSeries=(o,b)=> b==='nominal' ? (o.ext_nom||[]) : (o.ext||[]);   // works for D.national and a provider
+const capMedS =(b)=> b==='nominal' ? (D.national.ext_med_nom||[]) : (D.national.ext_med||[]);
+const capBases=()=> CAP_BASIS==='both' ? ['real','nominal'] : [CAP_BASIS];
+const capLbl  =(b)=> b==='nominal' ? 'nominal' : 'real';
+const capPrimary=()=> CAP_BASIS==='nominal' ? 'nominal' : 'real';
+const capColour =(b,base)=> b==='nominal' ? C.blue : base;
+const fmtCapK=(v)=>{ if(!v) return '–'; return '£'+(v>=1e6?(v/1e6).toFixed(2)+'bn':(v/1000).toFixed(1)+'m'); };   // input £000
+function capToggleHtml(){
+  return `<div class="cap-toggle"><span class="cap-lab">External capital shown in</span>
+    <div class="cap-btns" role="radiogroup" aria-label="Real or nominal prices">
+      <button type="button" class="split-btn${CAP_BASIS==='real'?' active':''}" data-cap="real" title="Deflated to constant 2024/25 prices with HESA's CPI index">Real (2024/25 prices)</button>
+      <button type="button" class="split-btn${CAP_BASIS==='nominal'?' active':''}" data-cap="nominal" title="Cash amounts as reported to HESA in each year">Nominal (cash)</button>
+      <button type="button" class="split-btn${CAP_BASIS==='both'?' active':''}" data-cap="both" title="Overlay both so the inflation gap is visible">Compare both</button>
+    </div></div>`;
+}
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-cap]'); if(!b) return;
+  CAP_BASIS=b.dataset.cap;
+  document.querySelectorAll('[data-cap]').forEach(x=>x.classList.toggle('active',x.dataset.cap===CAP_BASIS));
+  // Redraw whichever spinout views are on screen; hidden ones redraw when opened
+  const spinPanel=document.getElementById('sub-spinouts');
+  if(spinPanel && spinPanel.classList.contains('show')) renderSpinouts();
+  else if(typeof subRendered!=='undefined') subRendered.spinouts=false;
+  const ipPanel=document.getElementById('usub-ip');
+  if(ipPanel && ipPanel.classList.contains('show') && currentUni && currentSubRenderers.ip) currentSubRenderers.ip();
+});
+
+document.querySelectorAll('.cap-slot').forEach(el=>el.innerHTML=capToggleHtml());
+
+function renderSpinouts(){
+  const N=D.national, li=YRS.length-1;
+  const fteTot = N.spin_fte_total || Array(YRS.length).fill(0);
+  const kpis=[
+    {v:fmtN(N.spin[li]),l:'Spinouts surviving 3+ years, 2024/25 (sum across providers)',d:pct(N.spin[li],N.spin[li-1]),cls:''},
+    {v:fmtN(fteTot[li])+' FTE',
+     l:'Total spinout employment, 2024/25 (sum across providers, CPM-defined spin-outs)',
+     d:(fteTot[li] && fteTot[li-1]) ? pct(fteTot[li],fteTot[li-1]) : null,
+     cls:''},
+    {v:(N.fte_med && N.fte_med[li]>0 ? fmtN(N.fte_med[li])+' FTE' : 'n/a'),
+     l:'Median spinout employment per provider, 2024/25 (providers with any FTE)',
+     d:(N.fte_med && N.fte_med[li] && N.fte_med[li-1]) ? pct(N.fte_med[li],N.fte_med[li-1]) : null,
+     cls:'y'},
+    (()=>{const b=capPrimary(),m=capMedS(b),o=capMedS('nominal'),r=capMedS('real');
+      return {v:fmtCapK(m[li])+(CAP_BASIS==='both'?`<span class="cap-alt">${fmtCapK(o[li])} nominal</span>`:''),
+              l:'Median external investment per provider, 2024/25 (providers reporting >0, '+(CAP_BASIS==='both'?'real vs nominal':capLbl(b))+')',
+              d:pct(m[li],m[li-1]),cls:'b'};})(),
+    (()=>{const b=capPrimary(),t=capSeries(N,b),o=capSeries(N,'nominal');
+      return {v:fmtCapK(t[li])+(CAP_BASIS==='both'?`<span class="cap-alt">${fmtCapK(o[li])} nominal</span>`:''),
+              l:'Total external investment in active spinouts, 2024/25 ('+(CAP_BASIS==='both'?'real vs nominal':capLbl(b))+')',
+              d:pct(t[li],t[li-1]),cls:'g'};})()];
+  document.getElementById('spinKpis').innerHTML=kpis.map(k=>
+    `<div class="kpi ${k.cls}"><div class="v">${k.v}</div><div class="l">${k.l}</div>${deltaHtml(k.d)}</div>`).join('');
+
+  // Investment line(s) + all-time average(s), following the real/nominal switch
+  const capTraces=[];
+  for(const b of capBases()){
+    const bn=capSeries(N,b).map(v=>v==null?null:v/1e6);
+    const ok=bn.filter(v=>v!=null&&!isNaN(v));
+    const avg=ok.length?ok.reduce((a,c)=>a+c,0)/ok.length:0;
+    const col=capColour(b,C.pink);
+    capTraces.push(
+      {x:YRS,y:bn,name:'External investment (£bn, '+capLbl(b)+')',mode:'lines+markers',
+       line:{color:col,width:3},marker:{size:6},yaxis:'y2',
+       hovertemplate:'%{x}: £%{y:.2f}bn ('+capLbl(b)+')<extra></extra>'},
+      {x:YRS,y:YRS.map(()=>avg),name:'All-time average, '+capLbl(b)+' (£'+avg.toFixed(2)+'bn)',
+       mode:'lines',line:{color:b==='nominal'?C.blue:C.pd,width:2,dash:'dash'},yaxis:'y2',
+       hovertemplate:'All-time average ('+capLbl(b)+'): £%{y:.2f}bn<extra></extra>'});
+  }
+  Plotly.newPlot('chSpinTrend',[
+    {x:YRS,y:N.spin,name:'Spinouts (3+ yrs)',type:'bar',marker:{color:C.pm}},
+    ...capTraces
+  ],L({yaxis:{title:{text:'Spinouts',font:{size:11}},rangemode:'tozero'},
+       yaxis2:{overlaying:'y',side:'right',tickprefix:'£',ticksuffix:'bn',gridcolor:'rgba(0,0,0,0)',rangemode:'tozero'},
+       hovermode:'x unified',legend:{orientation:'h',y:-0.18,font:{size:10.5}}}),CFG);
+
+  /* Spinout employment — total (bars) + median per provider (line) */
+  const fteMed = N.fte_med || Array(YRS.length).fill(0);
+  Plotly.newPlot('chSpinFte',[
+    {x:YRS,y:fteTot,name:'Total spinout employment (FTE)',type:'bar',marker:{color:C.pd,opacity:.9},
+     hovertemplate:'<b>%{x}</b><br>Total FTE: %{y:,}<extra></extra>'},
+    {x:YRS,y:fteMed,name:'Median FTE per provider (providers with any)',
+     mode:'lines+markers',line:{color:C.pink,width:3,shape:'spline'},marker:{size:6},yaxis:'y2',
+     hovertemplate:'<b>%{x}</b><br>Median FTE: %{y:,}<extra></extra>'}
+  ],L({yaxis:{title:{text:'Total employment (FTE)',font:{size:11}},rangemode:'tozero'},
+       yaxis2:{overlaying:'y',side:'right',title:{text:'Median FTE per provider',font:{size:11}},
+               gridcolor:'rgba(0,0,0,0)',rangemode:'tozero'},
+       hovermode:'x unified',legend:{orientation:'h',y:-0.18,font:{size:10.5}}}),CFG);
+
+  /* spinouts by cluster, stacked area */
+  const cl={};
+  for(const k in D.unis){const u=D.unis[k];(cl[u.cluster]=cl[u.cluster]||Array(YRS.length).fill(0));
+    u.spin.forEach((v,i)=>{if(v)cl[u.cluster][i]+=v;});}
+  Plotly.newPlot('chSpinCluster',CLUSTERS.filter(c=>cl[c]&&cl[c].some(v=>v>0)).map(c=>({
+    x:YRS,y:cl[c],name:c,stackgroup:'s',mode:'lines',line:{width:.5,color:CLUSTER_COL[c]},
+    fillcolor:CLUSTER_COL[c]+'99',hovertemplate:c+': %{y}<extra></extra>'
+  })),L({hovermode:'x unified',legend:{orientation:'h',y:-0.25,font:{size:10.5}}}),CFG);
+
+  /* top 15 by external investment, latest year (ranked on the selected basis) */
+  const li2=YRS.length-1, pb=capPrimary();
+  const tops=Object.values(D.unis).filter(u=>capSeries(u,pb)[li2]>0)
+    .sort((a,b)=>capSeries(b,pb)[li2]-capSeries(a,pb)[li2]).slice(0,15).reverse();
+  const shortName=u=>u.name.replace('The University of','U.').replace('University of','U.');
+  const topTraces=capBases().map(b=>({
+    type:'bar',orientation:'h',name:'External investment ('+capLbl(b)+')',
+    y:tops.map(shortName),
+    x:tops.map(u=>(capSeries(u,b)[li2]||0)/1e6),
+    marker:{color:CAP_BASIS==='both'?(b==='nominal'?C.blue:C.green):tops.map(u=>CLUSTER_COL[u.cluster]||C.pm)},
+    text:tops.map(u=>'£'+((capSeries(u,b)[li2]||0)/1e6).toFixed(2)+'bn'),textposition:'outside',textfont:{size:11},
+    customdata:tops.map(u=>[u.spin[li2]??'–',u.cluster]),
+    hovertemplate:'<b>%{y}</b><br>External investment ('+capLbl(b)+'): £%{x:.2f}bn<br>Spinouts (3+ yrs): %{customdata[0]}<br>%{customdata[1]}<extra></extra>'
+  }));
+  const medBn=(capMedS(pb)[li2]||0)/1e6;
+  Plotly.newPlot('chSpinTop',topTraces,L({height:CAP_BASIS==='both'?640:520,margin:{l:200,r:70,t:10,b:50},
+    barmode:'group',xaxis:{tickprefix:'£',ticksuffix:'bn'},showlegend:CAP_BASIS==='both',
+    legend:{orientation:'h',y:-0.1,font:{size:10.5}},
+    shapes:[{type:'line',x0:medBn,x1:medBn,y0:-0.5,y1:14.5,line:{color:C.pink,width:1.5,dash:'dot'}}],
+    annotations:[{x:medBn,y:14.5,text:'median provider ('+capLbl(pb)+')',showarrow:false,
+      font:{size:10,color:C.pink},yanchor:'bottom'}]}),CFG);
+
+  /* three-category comparison: CPM spin-outs vs staff vs student start-ups */
+  const spinSeries = N.spin || [];
+  const staffSeries   = N.staff_startup   || Array(YRS.length).fill(0);
+  const studentSeries = N.student_startup || Array(YRS.length).fill(0);
+  Plotly.newPlot('chSpinCategories',[
+    {x:YRS, y:spinSeries,    name:'Spin-outs (HE ownership + other)', type:'bar',
+     marker:{color:C.pd},
+     hovertemplate:'<b>%{x}</b><br>Spin-outs: %{y:,} firms<extra></extra>'},
+    {x:YRS, y:staffSeries,   name:'Staff start-ups', type:'bar',
+     marker:{color:C.blue},
+     hovertemplate:'<b>%{x}</b><br>Staff start-ups: %{y:,} firms<extra></extra>'},
+    {x:YRS, y:studentSeries, name:'Student (graduate) start-ups', type:'bar',
+     marker:{color:C.pink},
+     hovertemplate:'<b>%{x}</b><br>Student start-ups: %{y:,} firms<extra></extra>'}
+  ],L({barmode:'group',
+    yaxis:{title:{text:'Active firms (surviving 3+ years)',font:{size:11}},rangemode:'tozero'},
+    legend:{orientation:'h',y:-0.18,font:{size:11}},
+    hovermode:'x unified', height:360}),CFG);
+}
+
+/* ---------- 5-year CAGR sub-page ---------- */
+const CAGR_METRICS=[
+  ['real','Business collaboration income (real)',100],
+  ['n','Business interactions',10],
+  ['consult','Consultancy income (real)',100],
+  ['fe','Facilities & equipment income (real)',100],
+  ['contract','Contract research income (real)',100],
+  ['lic','Licensing income (real)',100],
+  ['spin','Spinouts surviving 3+ years',1],
+  ['ext','External investment in spinouts (real)',100],
+  ['lic_n','Licences granted',1]];
+const BANDS=[
+  ['Significant increase',v=>v>=10,C.yellow],
+  ['Moderate increase',v=>v>=3&&v<10,C.blue],
+  ['Stable',v=>v>-3&&v<3,C.pl],
+  ['Moderate decline',v=>v>-10&&v<=-3,C.pink],
+  ['Significant decline',v=>v<=-10,C.pd]];
+function cagr5(arr,floor){
+  const li=YRS.length-1,a=arr[li-5],b=arr[li];
+  if(a==null||b==null||a<floor||b<0) return null;
+  return (Math.pow(b/a,1/5)-1)*100;
+}
+/* Which metrics have SME/Large business splits available.
+   Maps base key → {total, sme, lc} variant field names on each provider record. */
+const CAGR_SPLITS = {
+  real:     { total:'real',     sme:'real_sme',     lc:'real_lc' },
+  consult:  { total:'consult',  sme:'consult_sme',  lc:'consult_lc' },
+  fe:       { total:'fe',       sme:'fe_sme',       lc:'fe_lc' },
+  contract: { total:'contract', sme:'contract_sme', lc:'contract_lc' },
+  lic:      { total:'lic',      sme:'lic_sme',      lc:'lic_lc' },
+  lic_n:    { total:'lic_n',    sme:'lic_n_sme',    lc:'lic_n_lc' },
+  // interactions: counts have no "total" stored, but Total = SME + LC computed
+  // on the fly (handled in drawCagr below)
+  n:        { total:'__n_total', sme:'n_sme', lc:'n_lc' }
+};
+
+function renderCagr(){
+  const sel=document.getElementById('cagrMetric');
+  sel.innerHTML=CAGR_METRICS.map(([k,lab])=>`<option value="${k}">${lab}</option>`).join('');
+  sel.addEventListener('change',drawCagr);
+  // Split radio buttons
+  document.getElementById('cagrSplit').addEventListener('click',e=>{
+    const b=e.target.closest('.split-btn'); if(!b||b.disabled) return;
+    document.querySelectorAll('#cagrSplit .split-btn').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    drawCagr();
+  });
+  // Decomposition group selector
+  initDecomp();
+  drawCagr();
+}
+
+/* ---------- BCI growth decomposition ---------- */
+function initDecomp(){
+  const sel=document.getElementById('decompGroup');
+  if(!sel) return;
+  const clusters=Object.keys(D.clusterAgg||{}).filter(c=>c!=='Unclassified');
+  // Preferred ordering of clusters
+  const order=CLUSTERS.filter(c=>clusters.includes(c));
+  sel.innerHTML='<option value="__all">All providers (UK)</option>'+
+    order.map(c=>`<option value="${c}">${c}</option>`).join('');
+  sel.addEventListener('change',drawDecomp);
+  drawDecomp();
+}
+
+function drawDecomp(){
+  if(!document.getElementById('decompGroup')) return;
+  const group=document.getElementById('decompGroup').value;
+  const src = group==='__all'
+    ? {real:D.national.real, contract:D.national.contract, consult:D.national.consult,
+       fe:D.national.fe, lic:D.national.lic}
+    : D.clusterAgg[group];
+  if(!src){return;}
+
+  // Streams ordered consistently with the rest of the dashboard
+  const streams=[
+    {key:'consult', label:'Consultancy',            colour:C.blue},
+    {key:'fe',      label:'Facilities & equipment', colour:C.green},
+    {key:'contract',label:'Contract research',      colour:C.pink},
+    {key:'lic',     label:'Licensing',              colour:C.pm}
+  ];
+  const yrs=D.years;
+  // Find first and last years with non-null total
+  const firstI=src.real.findIndex(v=>v!=null && v>0);
+  const lastI =(src.real.length-1) - src.real.slice().reverse().findIndex(v=>v!=null && v>0);
+  if(firstI<0 || lastI<=firstI){
+    document.getElementById('chDecompContrib').innerHTML='<p class="note" style="text-align:center;padding:40px">Insufficient data for this group.</p>';
+    return;
+  }
+  document.getElementById('decompFirstYr').textContent=yrs[firstI];
+  document.getElementById('decompLastYr').textContent=yrs[lastI];
+
+  const firstTotal=src.real[firstI];
+  const lastTotal=src.real[lastI];
+  const totalPct=(lastTotal/firstTotal-1)*100;
+
+  // For each stream: weight (share of base-year total), % change, contribution (weight × pctChg)
+  const rows=streams.map(s=>{
+    const a=(src[s.key]||[])[firstI]||0;
+    const b=(src[s.key]||[])[lastI]||0;
+    const weight = firstTotal>0 ? a/firstTotal*100 : 0;
+    const pctChg = a>0 ? (b/a-1)*100 : (b>0 ? null : 0);   // null = grew from zero
+    const contrib= pctChg==null ? null : weight/100 * pctChg;
+    return {...s, a, b, weight, pctChg, contrib};
+  });
+
+  // ── Decomposition contribution chart (horizontal bar, percentage points) ──
+  const sumContrib=rows.reduce((acc,r)=>acc+(r.contrib||0),0);
+  // Two traces — components and the total anchor — so each gets its own
+  // hover text. Total sits at the top, component bars below, separated by a
+  // dotted gridline.
+  const compLabels=rows.map(r=>r.label);
+  const compValues=rows.map(r=>r.contrib==null?0:+r.contrib.toFixed(1));
+  const yAxisOrder=[...compLabels.slice().reverse(),'Total BCI change'];   // bottom→top
+
+  const componentTrace={
+    type:'bar', orientation:'h', name:'Component contribution',
+    y:compLabels.slice().reverse(),
+    x:compValues.slice().reverse(),
+    marker:{color:rows.map(r=>r.colour).reverse()},
+    text:rows.map(r=>r.contrib==null?'grew from £0':(r.contrib>0?'+':'')+r.contrib.toFixed(1)+'pp').reverse(),
+    textposition:'outside', textfont:{size:12,color:'#3e1151'},
+    customdata:rows.map(r=>[r.weight,r.pctChg||0,(r.a||0)/1000,(r.b||0)/1000]).reverse(),
+    hovertemplate:'<b>%{y}</b><br>'+
+                  'Starting weight: %{customdata[0]:.1f}% of total BCI<br>'+
+                  'Total change %{customdata[1]:+.1f}% (£%{customdata[2]:.0f}m → £%{customdata[3]:.0f}m)<br>'+
+                  '→ Contribution: %{x:+.1f}pp to total BCI growth'+
+                  '<extra></extra>'
+  };
+  const totalTrace={
+    type:'bar', orientation:'h', name:'Total BCI change',
+    y:['Total BCI change'],
+    x:[+totalPct.toFixed(1)],
+    marker:{color:C.pd, line:{color:'#1a0524',width:1.5}},
+    text:[(totalPct>0?'+':'')+totalPct.toFixed(1)+'%'],
+    textposition:'outside', textfont:{size:13,color:'#3e1151'},
+    customdata:[[firstTotal/1000,lastTotal/1000]],
+    hovertemplate:'<b>Total BCI change</b><br>'+
+                  '£%{customdata[0]:.0f}m → £%{customdata[1]:.0f}m<br>'+
+                  '→ %{x:+.1f}% over the period'+
+                  '<extra></extra>'
+  };
+  const allX=[...compValues,+totalPct.toFixed(1)];
+  const xPad=Math.max(Math.abs(Math.min(0,...allX)),Math.abs(Math.max(0,...allX)))*0.18;
+  const xMin=Math.min(0,...allX)-xPad, xMax=Math.max(0,...allX)+xPad;
+
+  Plotly.newPlot('chDecompContrib',[componentTrace,totalTrace],L({
+    height:330, margin:{l:170,r:80,t:10,b:50},
+    barmode:'overlay',
+    xaxis:{title:{text:'Change in BCI (percentage points / total %)',font:{size:11}},
+           zerolinecolor:'#9a90a6',zerolinewidth:2,ticksuffix:'pp',range:[xMin,xMax]},
+    yaxis:{tickfont:{size:12},
+           categoryorder:'array',categoryarray:yAxisOrder,
+           type:'category'},
+    shapes:[
+      // separator between Total bar (top) and component bars
+      {type:'line',xref:'paper',x0:0,x1:1,y0:rows.length-0.5,y1:rows.length-0.5,
+       line:{color:'#d0c8da',width:1,dash:'dot'}}
+    ],
+    showlegend:false}),CFG);
+
+  // Narrative: pick the strongest driver by absolute contribution
+  const ranked=rows.filter(r=>r.contrib!=null).sort((a,b)=>Math.abs(b.contrib)-Math.abs(a.contrib));
+  const top=ranked[0];
+  const note=document.getElementById('decompNote');
+  if(note && top){
+    const dir=totalPct>=0?'grew':'fell';
+    const magnitude=Math.abs(totalPct).toFixed(1)+'%';
+    const driverSign=top.contrib>0?'adding':'subtracting';
+    const driverMag=Math.abs(top.contrib).toFixed(1)+'pp';
+    const pctChgFmt=(top.pctChg>0?'+':'')+top.pctChg.toFixed(1)+'%';
+    note.innerHTML=
+      `Between ${yrs[firstI]} and ${yrs[lastI]}, total BCI for this group <b>${dir} by ${magnitude}</b>. `+
+      `The dominant driver was <b>${top.label}</b>, ${driverSign} <b>${driverMag}</b> to the total — `+
+      `it accounted for <b>${top.weight.toFixed(0)}%</b> of BCI in ${yrs[firstI]} and changed by <b>${pctChgFmt}</b> over the period. `+
+      `<span style="color:#6d6478;font-size:12.5px">Decomposition check: the four components sum to ${(sumContrib>=0?'+':'')}${sumContrib.toFixed(1)}pp against the actual total change of ${(totalPct>=0?'+':'')}${totalPct.toFixed(1)}%; small differences are interaction effects between streams.</span>`;
+  }
+
+  // ── Absolute chart: total line + four streams stacked area ──
+  const traces=[
+    ...streams.map(s=>({
+      x:yrs,y:(src[s.key]||[]).map(v=>v==null?null:v/1000),
+      name:s.label,stackgroup:'one',mode:'lines',
+      line:{width:.5,color:s.colour}, fillcolor:s.colour+'88'
+    })),
+    {x:yrs,y:src.real.map(v=>v==null?null:v/1000),name:'Total BCI',
+     mode:'lines+markers',line:{color:C.pd,width:3},marker:{size:5}}
+  ];
+  Plotly.newPlot('chDecompAbs',traces,L({
+    yaxis:{tickprefix:'£',ticksuffix:'m',rangemode:'tozero'},
+    hovermode:'x unified', legend:{orientation:'h',y:-0.18}}),CFG);
+
+  // ── Indexed chart: each series rebased to 100 at firstI ──
+  const idx=(arr)=>{
+    const base=arr[firstI];
+    if(!base||base<=0) return arr.map(()=>null);
+    return arr.map(v=>v==null?null:v/base*100);
+  };
+  const indexedTraces=[
+    {x:yrs,y:idx(src.real),name:'Total BCI',mode:'lines+markers',
+     line:{color:C.pd,width:3.5,shape:'spline'},marker:{size:6}},
+    ...streams.map(s=>({
+      x:yrs,y:idx(src[s.key]||[]),name:s.label,mode:'lines',
+      line:{color:s.colour,width:2}
+    }))
+  ];
+  Plotly.newPlot('chDecompIndexed',indexedTraces,L({
+    yaxis:{title:{text:'Index ('+yrs[firstI]+' = 100)',font:{size:11}},
+           zerolinecolor:'#9a90a6'},
+    shapes:[{type:'line',x0:yrs[0],x1:yrs[yrs.length-1],y0:100,y1:100,
+             line:{color:'#9a90a6',width:1.5,dash:'dot'}}],
+    hovermode:'x unified', legend:{orientation:'h',y:-0.18}}),CFG);
+}
+function drawCagr(){
+  const key=document.getElementById('cagrMetric').value;
+  const floor=CAGR_METRICS.find(m=>m[0]===key)[2];
+  const split=document.querySelector('#cagrSplit .split-btn.active')?.dataset.split||'total';
+  // Enable/disable split buttons based on whether the metric supports splitting
+  const splitMap=CAGR_SPLITS[key];
+  const splitsAvailable=!!splitMap;
+  document.querySelectorAll('#cagrSplit .split-btn').forEach(b=>{
+    b.disabled=!splitsAvailable && b.dataset.split!=='total';
+    if(b.disabled && b.classList.contains('active')){
+      b.classList.remove('active');
+      document.querySelector('#cagrSplit .split-btn[data-split="total"]').classList.add('active');
+    }
+  });
+  // Update note about split availability
+  const noteEl=document.getElementById('cagrSplitNote');
+  if(noteEl) noteEl.textContent = splitsAvailable
+    ? (split==='total'?'Showing combined SME + large-business figures.':
+       split==='sme'?'Showing the SME-only stream.':'Showing the large-business stream only.')
+    : 'This metric has no SME / large-business breakdown — showing total.';
+
+  // Resolve the actual array to use for each provider
+  const getArr = (u) => {
+    if(!splitsAvailable) return u[key];
+    if(split==='total' && splitMap.total==='__n_total'){
+      // synthesise interactions total: SME count + LC count, year by year
+      const a=u[splitMap.sme], b=u[splitMap.lc];
+      if(!a||!b) return null;
+      return a.map((v,i)=>(v==null||b[i]==null)?null:(v+b[i]));
+    }
+    const field = splitMap[split] || splitMap.total;
+    return u[field];
+  };
+
+  const byCl={'All providers':[]};
+  for(const k in D.unis){const u=D.unis[k];
+    const arr=getArr(u); if(!arr) continue;
+    const g=cagr5(arr,floor);
+    if(g==null) continue;
+    const entry={name:u.name,cagr:g};
+    byCl['All providers'].push(entry);
+    (byCl[u.cluster]=byCl[u.cluster]||[]).push(entry);}
+  const rows=['All providers',...CLUSTERS.filter(c=>byCl[c]&&byCl[c].length>=4&&c!=='Unclassified')];
+  const traces=BANDS.map(([name,test,col])=>({
+    type:'bar',orientation:'h',name,marker:{color:col},
+    y:rows.slice().reverse(),
+    x:rows.slice().reverse().map(r=>byCl[r].filter(e=>test(e.cagr)).length/byCl[r].length*100),
+    customdata:rows.slice().reverse().map(r=>[byCl[r].filter(e=>test(e.cagr)).length,byCl[r].length]),
+    hovertemplate:'<b>%{y}</b><br>'+name+': %{x:.0f}% (%{customdata[0]} of %{customdata[1]} providers)<extra></extra>',
+    text:rows.slice().reverse().map(r=>{const p=byCl[r].filter(e=>test(e.cagr)).length/byCl[r].length*100;return p>=8?p.toFixed(0)+'%':'';}),
+    textposition:'inside',textfont:{size:11,color:name==='Significant increase'?'#3e1151':'#fff'}
+  }));
+  Plotly.newPlot('chCagr',traces,L({barmode:'stack',height:480,
+    margin:{l:250,r:20,t:10,b:50},xaxis:{ticksuffix:'%',range:[0,100]},
+    yaxis:{tickfont:{size:12}},legend:{orientation:'h',y:-0.14,traceorder:'normal'}}),CFG);
+
+  /* distribution box plot — each dot now carries its provider name */
+  const order=CLUSTERS.filter(c=>byCl[c]&&byCl[c].length>=4&&c!=='Unclassified');
+  Plotly.newPlot('chCagrDist',order.map(c=>({
+    y:byCl[c].map(e=>Math.max(-40,Math.min(60,e.cagr))),
+    text:byCl[c].map(e=>e.name),
+    customdata:byCl[c].map(e=>e.cagr.toFixed(1)),
+    name:c,type:'box',
+    boxpoints:'all',jitter:.5,pointpos:0,
+    marker:{color:CLUSTER_COL[c],size:5,opacity:.7,line:{color:'#fff',width:.5}},
+    line:{color:CLUSTER_COL[c]},
+    fillcolor:CLUSTER_COL[c]+'22',
+    hovertemplate:'<b>%{text}</b><br>%{customdata}%/yr<br><i>'+c+'</i><extra></extra>'
+  })),L({showlegend:false,yaxis:{ticksuffix:'%',zerolinecolor:'#9a90a6',zerolinewidth:2,
+    title:{text:'CAGR, %/yr (clipped ±40/60)',font:{size:11}}},
+    xaxis:{showticklabels:false},hovermode:'closest'}),CFG);
+}
+
+/* ---------- R&D collaboration (GtR) sub-page ---------- */
+function gtrVal(id){const r=D.gtr.indicators.find(x=>x.id===id);return r?r.value:'–';}
+function renderGtr(){
+  const T=D.gtr.trends, yrs=T.year;
+  const v1=+String(gtrVal('V1')).replace(/[^\d.-]/g,'');
+  const i5a=+String(gtrVal('I5a')).replace(/[^\d.-]/g,'');
+  const i6a=+String(gtrVal('I6a')).replace(/[^\d.-]/g,'');
+  const ktpShare=v1?Math.round(i5a/v1*1000)/10:null;
+  const crdShare=v1?Math.round(i6a/v1*1000)/10:null;
+  const kpis=[
+    {v:gtrVal('V1'),l:'Total R&I collaboration links (all years pooled)',cls:''},
+    {v:gtrVal('V2'),l:'Unique UK businesses collaborating with universities',cls:'b'},
+    {v:'£31.4bn',l:'Total associated grant value · mean '+gtrVal('V6')+' per collaboration',cls:'g'},
+    {v:(crdShare!=null?crdShare+'%':'–'),l:'Collaborative R&D share of links · KTPs '+(ktpShare!=null?ktpShare+'%':'–'),cls:'y'}];
+  document.getElementById('gtrKpis').innerHTML=kpis.map(k=>
+    `<div class="kpi ${k.cls}"><div class="v">${k.v}</div><div class="l">${k.l}</div></div>`).join('');
+
+  Plotly.newPlot('chGtrLinks',[
+    {x:yrs,y:T.V1,name:'Collaboration links',type:'bar',marker:{color:C.pm}},
+    {x:yrs,y:T.V2,name:'Unique businesses',mode:'lines+markers',line:{color:C.pink,width:3},marker:{size:6}},
+    {x:yrs,y:T.V3,name:'Unique universities',mode:'lines+markers',line:{color:C.blue,width:2.5,dash:'dot'},marker:{size:6},yaxis:'y2'}
+  ],L({yaxis:{rangemode:'tozero'},yaxis2:{overlaying:'y',side:'right',rangemode:'tozero',gridcolor:'rgba(0,0,0,0)',title:{text:'Universities',font:{size:11}}},
+       hovermode:'x unified',xaxis:{dtick:1}}),CFG);
+
+  Plotly.newPlot('chGtrMech',[
+    {x:yrs,y:T.I6a,name:'Collaborative R&D',type:'bar',marker:{color:C.blue}},
+    {x:yrs,y:T.I5a,name:'Knowledge Transfer Partnerships',type:'bar',marker:{color:C.yellow}}
+  ],L({barmode:'stack',hovermode:'x unified',xaxis:{dtick:1},yaxis:{rangemode:'tozero'}}),CFG);
+
+  Plotly.newPlot('chGtrIntensity',[
+    {x:yrs,y:T.I1,name:'Collaborations per university',type:'bar',marker:{color:C.pm}},
+    {x:yrs,y:T.I2,name:'Collaborations per business',mode:'lines+markers',line:{color:C.green,width:2.5},marker:{size:6},yaxis:'y2'},
+    {x:yrs,y:T.I3,name:'Businesses with 2+ universities (%)',mode:'lines+markers',line:{color:C.pink,width:2.5,dash:'dot'},marker:{size:6},yaxis:'y2'}
+  ],L({hovermode:'x unified',xaxis:{dtick:1},yaxis:{rangemode:'tozero'},
+       yaxis2:{overlaying:'y',side:'right',rangemode:'tozero',gridcolor:'rgba(0,0,0,0)'}}),CFG);
+
+  Plotly.newPlot('chGtrGrant',[
+    {x:yrs,y:T.V6.map(v=>v/1e6),type:'scatter',mode:'lines+markers',fill:'tozeroy',
+     fillcolor:'rgba(0,179,136,.15)',line:{color:C.green,width:3},marker:{size:7},
+     hovertemplate:'%{x}: £%{y:.2f}m mean grant<extra></extra>'}
+  ],L({showlegend:false,xaxis:{dtick:1},yaxis:{tickprefix:'£',ticksuffix:'m',rangemode:'tozero'}}),CFG);
+
+  const glance=[['V4','Projects with a business partner'],['V5','Total grant value (all years)'],
+    ['I1','Avg collaborations per university'],['I2','Avg collaborations per business'],
+    ['D6','Associated publications'],['D7','Further funding records leveraged']];
+  document.getElementById('gtrGlance').innerHTML='<div class="grid3">'+glance.map(([id,lab])=>{
+    const r=D.gtr.indicators.find(x=>x.id===id)||{};
+    return `<div style="padding:12px 14px;border-left:4px solid var(--purple-mid);background:var(--grey-bg);border-radius:8px" title="${(r.note||'').replace(/"/g,'&quot;')}">
+      <div style="font-size:20px;font-weight:800;color:var(--purple-dark)">${r.value||'–'}</div>
+      <div style="font-size:12px;color:#6d6478">${lab}</div></div>`;}).join('')+'</div>';
+}
+
+/* ---------- choropleth map ---------- */
+const REGIONS_ORDERED=['Scotland','Northern Ireland','Wales','London','South East','South West','East of England','East Midlands','West Midlands','North West','North East','Yorkshire and The Humber'];
+const MAP_SCALES={
+  real:[[0,'#f3eef7'],[0.4,'#aaa5bb'],[0.75,'#60537f'],[1,'#3e1151']],
+  growth:[[0,'#ff0090'],[0.5,'#f7f7f8'],[1,'#00B388']]
+};
+function mapValue(metric,r,yi){
+  const A=D.regionAgg[r]; if(!A) return null;
+  if(metric==='real') return A.real[yi]/1000;
+  if(metric==='realpp') return A.n[yi]?A.real[yi]/1000/A.n[yi]:null;
+  if(metric==='lic') return A.lic[yi]/1000;
+  if(metric==='growth'){
+    if(yi===0) return null;
+    const a=A.med[yi-1],b=A.med[yi];
+    return (a&&b)?(b/a-1)*100:null;
+  }
+  return A[metric][yi];
+}
+function mapFmt(metric,v){
+  if(v==null) return '–';
+  if(metric==='real'||metric==='realpp'||metric==='lic') return '£'+v.toFixed(1)+'m';
+  if(metric==='growth') return (v>0?'+':'')+v.toFixed(1)+'%';
+  return Math.round(v).toLocaleString('en-GB');
+}
+function initMap(){
+  const ySel=document.getElementById('mapYear');
+  ySel.innerHTML=YRS.map((y,i)=>`<option value="${i}" ${i===YRS.length-1?'selected':''}>${y}</option>`).join('');
+  document.getElementById('mapMetric').addEventListener('change',drawMap);
+  ySel.addEventListener('change',drawMap);
+  drawMap();
+}
+function drawMap(){
+  const metric=document.getElementById('mapMetric').value;
+  const yi=+document.getElementById('mapYear').value;
+  const locs=[],vals=[],texts=[];
+  for(const r of REGIONS_ORDERED){
+    const v=mapValue(metric,r,yi);
+    locs.push(r); vals.push(v);
+    const A=D.regionAgg[r];
+    texts.push(`<b>${r}</b> · ${YRS[yi]}<br>${document.getElementById('mapMetric').selectedOptions[0].text}: <b>${mapFmt(metric,v)}</b><br>Providers: ${A.n[yi]}<br>Real BCI: £${(A.real[yi]/1000).toFixed(0)}m · SME interactions: ${A.n_sme[yi].toLocaleString()}<br><i>Click to pin this region's trend</i>`);
+  }
+  const diverging=metric==='growth';
+  const tr={type:'choropleth',geojson:D.geo,locations:locs,z:vals,
+    featureidkey:'properties.region',text:texts,hovertemplate:'%{text}<extra></extra>',
+    colorscale:diverging?MAP_SCALES.growth:MAP_SCALES.real,
+    zmid:diverging?0:undefined,
+    marker:{line:{color:'#fff',width:1.2}},
+    colorbar:{thickness:14,len:.7,tickfont:{size:11},
+      title:{text:diverging?'%':'',font:{size:11}}}};
+  Plotly.newPlot('chMap',[tr],L({
+    geo:{scope:'europe',fitbounds:'locations',projection:{type:'mercator'},
+      bgcolor:'rgba(0,0,0,0)',showframe:false,showcoastlines:false,showland:false},
+    margin:{l:0,r:0,t:6,b:0},height:520,dragmode:false}),CFG);
+  document.getElementById('chMap').on('plotly_click',ev=>{
+    if(ev.points&&ev.points[0]) pinRegion(ev.points[0].location);
+  });
+}
+function pinRegion(r){
+  const A=D.regionAgg[r]; if(!A) return;
+  document.getElementById('mapDetail').style.display='block';
+  document.getElementById('mapDetailTitle').textContent=r+' — trends, real terms';
+  Plotly.newPlot('chMapTrend',[
+    {x:YRS,y:A.real.map(v=>v/1000),name:'Real BCI (£m)',mode:'lines+markers',line:{color:C.pink,width:3},marker:{size:6}},
+    {x:YRS,y:A.med.map(v=>v==null?null:v/1000),name:'Median provider BCI (£m)',mode:'lines',line:{color:C.pd,width:2,dash:'dash'}},
+    {x:YRS,y:A.n_sme,name:'SME interactions',mode:'lines',line:{color:C.blue,width:2},yaxis:'y2'}
+  ],L({height:300,yaxis:{tickprefix:'£',ticksuffix:'m',rangemode:'tozero'},
+       yaxis2:{overlaying:'y',side:'right',gridcolor:'rgba(0,0,0,0)',rangemode:'tozero'},
+       hovermode:'x unified',margin:{l:60,r:50,t:10,b:40}}),CFG);
+  document.getElementById('mapDetail').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+function arrowFor(p){
+  if(p>=10) return '<span class="arrow a-uu" title="10%+ above">⏫</span>';
+  if(p>=1)  return '<span class="arrow a-u" title="1–10% above">⌃</span>';
+  if(p>-1)  return '<span class="arrow a-f" title="within ±1%">—</span>';
+  if(p>-10) return '<span class="arrow a-d" title="1–10% below">⌄</span>';
+  return '<span class="arrow a-dd" title="10%+ below">⏬</span>';
+}
+function renderScorecard(){
+  const N=D.national, li=YRS.length-1;
+  const avg=(a,i0,i1)=>{let s=0,n=0;for(let i=i0;i<=i1;i++){s+=a[i];n++}return s/n};
+  const rows=[
+    ['cat','Collaboration activity'],
+    ['SME interactions',N.n_sme,fmtN],
+    ['Large business interactions',N.n_lc,fmtN],
+    ['cat','Investment in collaboration'],
+    ['Business collaboration income (real)',N.real,fmtM],
+    ['BCI from SMEs (real)',N.real_sme,fmtM],
+    ['BCI from large business (real)',N.real_lc,fmtM],
+    ['UK industry funds in HE R&D (real)',N.uk_ind,fmtM],
+    ['cat','Products of collaboration'],
+    ['Licences granted',N.lic_n,fmtN],
+    ['Licensing income (real)',N.lic,fmtM],
+    ['Spinouts surviving 3+ years',N.spin,fmtN]];
+  let html=`<thead><tr><th>Indicator</th><th class="c">2024/25</th><th class="c">YoY change</th><th class="c">Short-term<br><span style="font-weight:400;font-size:11px">vs 5-yr avg</span></th><th class="c">Long-term<br><span style="font-weight:400;font-size:11px">vs 10-yr avg</span></th><th class="c">Pre-Covid<br><span style="font-weight:400;font-size:11px">vs 2018/19</span></th></tr></thead><tbody>`;
+  for(const r of rows){
+    if(r[0]==='cat'){ html+=`<tr class="cat"><td colspan="6">${r[1]}</td></tr>`; continue; }
+    const [name,a,f]=r;
+    const cur=a[li];
+    const comps=[[a[li-1],'2023/24'],[avg(a,li-5,li-1),'5-yr average'],[avg(a,li-10,li-1),'10-yr average'],[a[4],'2018/19']];
+    html+=`<tr class="data"><td>${name}</td><td class="c" style="font-weight:700">${f(cur)}</td>`+
+      comps.map(([b,lab])=>{const p=pct(cur,b);
+        return `<td class="c" title="${f(cur)} vs ${f(b)} (${lab}): ${p>0?'+':''}${p.toFixed(1)}%">${arrowFor(p)}</td>`;}).join('')+'</tr>';
+  }
+  document.getElementById('scorecard').innerHTML=html+'</tbody>';
+}
+
+/* ---------- CSV exports ---------- */
+function downloadCsv(name,rows){
+  const esc=v=>{v=v==null?'':String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+  const csv=rows.map(r=>r.map(esc).join(',')).join('\n');
+  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=name;
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},400);
+}
+const BENCH_METRICS=[
+  ['real','Real BCI','£m'],['real_sme','Real BCI from SMEs','£m'],['real_lc','Real BCI from large business','£m'],
+  ['n_sme','SME interactions','n'],['n_lc','Large business interactions','n'],
+  ['consult','Consultancy income','£m'],['fe','Facilities & equipment income','£m'],
+  ['contract','Contract research income','£m'],['lic','Licensing income','£m'],
+  ['lic_n','Licences granted','n'],['spin','Spinouts (3+ yrs)','n'],['ext','Spinout external investment','£m']];
+const UNI_COLS=[['real','real_bci_000gbp'],['real_sme','real_bci_sme_000gbp'],['real_lc','real_bci_large_000gbp'],
+  ['n_sme','sme_interactions'],['n_lc','large_business_interactions'],['contract','contract_research_real_000gbp'],
+  ['consult','consultancy_real_000gbp'],['fe','facilities_equipment_real_000gbp'],['lic','licensing_income_real_000gbp'],['lic_n','licences_granted'],
+  ['spin','spinouts_surv3'],['ext','spinout_external_investment_real_000gbp'],['pat','patents_granted'],['uk_ind','uk_industry_he_rd_real_000gbp']];
+const EXPORTS={
+  national(){
+    const N=D.national, keys=Object.keys(N);
+    const rows=[['academic_year',...keys]];
+    YRS.forEach((y,i)=>rows.push([y,...keys.map(k=>N[k][i])]));
+    downloadCsv('cpm_national_timeseries.csv',rows);
+  },
+  regional(){
+    const rows=[['region','academic_year','real_bci_000gbp','median_provider_bci_000gbp','sme_interactions','large_business_interactions','licensing_income_real_000gbp','spinouts_surv3','n_providers']];
+    for(const r of REGIONS_ORDERED){const A=D.regionAgg[r];
+      YRS.forEach((y,i)=>rows.push([r,y,A.real[i],A.med[i],A.n_sme[i],A.n_lc[i],A.lic[i],A.spin[i],A.n[i]]));}
+    downloadCsv('cpm_regional_aggregates.csv',rows);
+  },
+  scorecard(){
+    const tbl=document.getElementById('scorecard');
+    const rows=[['indicator','value_2024_25','yoy_pct','vs_5yr_avg_pct','vs_10yr_avg_pct','vs_2018_19_pct']];
+    tbl.querySelectorAll('tr.data').forEach(tr=>{
+      const tds=[...tr.querySelectorAll('td')];
+      const pcts=tds.slice(2).map(td=>{const m=(td.title||'').match(/(-?[\d.]+)%$/);return m?m[1]:'';});
+      rows.push([tds[0].textContent,tds[1].textContent,...pcts]);
+    });
+    downloadCsv('cpm_scorecard.csv',rows);
+  },
+  institution(){
+    if(!currentUni) return;
+    const u=D.unis[currentUni];
+    const rows=[['provider','region','cluster','academic_year',...UNI_COLS.map(c=>c[1])]];
+    YRS.forEach((y,i)=>rows.push([u.name,u.region,u.cluster,y,...UNI_COLS.map(([k])=>u[k][i])]));
+    downloadCsv(u.name.replace(/[^\w]+/g,'_').toLowerCase()+'_cpm.csv',rows);
+  },
+  gtr(){
+    const rows=[['id','category','name','value','unit','note']];
+    for(const r of D.gtr.indicators) rows.push([r.id,r.category,r.name,r.value,r.unit,r.note]);
+    downloadCsv('cpm_gtr_indicators.csv',rows);
+  },
+  cases(){
+    const rows=[['title','url','date','university','partner','sector','topics','summary']];
+    for(const c of (D.cases||[])) rows.push([c.title,c.url,c.date,c.university||'',c.partner||'',c.sector||'',(c.topics||[]).join('; '),(c.summary||'').replace(/\s+/g,' ').slice(0,500)]);
+    downloadCsv('cpm_case_studies.csv',rows);
+  },
+  allunis(){
+    const rows=[['ukprn','provider','region','cluster','academic_year',...UNI_COLS.map(c=>c[1])]];
+    for(const id of Object.keys(D.unis)){const u=D.unis[id];
+      YRS.forEach((y,i)=>{ if(u.real[i]!=null||u.n_sme[i]!=null)
+        rows.push([id,u.name,u.region,u.cluster,y,...UNI_COLS.map(([k])=>u[k][i])]);});}
+    downloadCsv('cpm_full_panel.csv',rows);
+  }
+};
+document.addEventListener('click',e=>{
+  const b=e.target.closest('.btn-export');
+  if(b&&EXPORTS[b.dataset.csv]) EXPORTS[b.dataset.csv]();
+});
+let currentUni=null;
+
+/* ================= EXPLORER ================= */
+let uniIds=[];
+function renderExplorer(){
+  uniIds=Object.keys(D.unis).sort((a,b)=>D.unis[a].name.localeCompare(D.unis[b].name));
+  const sel=document.getElementById('uniSelect');
+  const fill=q=>{
+    const f=uniIds.filter(k=>!q||D.unis[k].name.toLowerCase().includes(q));
+    sel.innerHTML=f.map(k=>`<option value="${k}">${D.unis[k].name}</option>`).join('');
+    if(f.length) showUni(sel.value);
+  };
+  const bm=document.getElementById('benchMetric');
+  bm.innerHTML=BENCH_METRICS.map(([k,lab])=>`<option value="${k}">${lab}</option>`).join('');
+  bm.addEventListener('change',()=>showUni(currentUni));
+  fill('');
+  // sensible default: a large provider
+  const def=uniIds.find(k=>D.unis[k].name.includes('Manchester'))||uniIds[0];
+  sel.value=def; showUni(def);
+  sel.addEventListener('change',()=>showUni(sel.value));
+  document.getElementById('uniSubnav').addEventListener('click',e=>{
+    const b=e.target.closest('button');if(!b)return;
+    const sub=b.dataset.sub;
+    document.querySelectorAll('#uniSubnav button').forEach(x=>x.classList.toggle('active',x===b));
+    document.querySelectorAll('#tab-explorer .subpanel').forEach(p=>p.classList.toggle('show',p.id==='usub-'+sub));
+    if(currentSubRenderers[sub]) currentSubRenderers[sub]();
+    else document.querySelectorAll('#usub-'+sub+' .chart').forEach(el=>{if(el.data)Plotly.Plots.resize(el);});
+  });
+  document.getElementById('uniSearch').addEventListener('input',e=>fill(e.target.value.toLowerCase().trim()));
+}
+
+function median(arr){ const a=arr.filter(v=>v!=null).sort((x,y)=>x-y);
+  if(!a.length) return null; const m=Math.floor(a.length/2);
+  return a.length%2?a[m]:(a[m-1]+a[m])/2; }
+function percentile(val,arr){ const a=arr.filter(v=>v!=null);
+  if(val==null||!a.length) return null;
+  return a.filter(v=>v<=val).length/a.length*100; }
+
+function showUni(id){
+  currentUni=id;
+  const u=D.unis[id], li=YRS.length-1;
+  // TRAC group criterion definitions for tooltip
+  const TRAC_CRIT={
+    A:'Medical school AND research income at least 20% of total income',
+    B:'Research income at least 15% of total income (no medical school OR below 20% threshold)',
+    C:'Research income 5-15% of total income',
+    D:'Research income below 5%, total income above £150M',
+    E:'Research income below 5%, total income £150M or below',
+    F:'Specialist music or arts teaching institution'
+  };
+  const tracTip=u.trac?`OfS TRAC peer Group ${u.trac.group} — ${TRAC_CRIT[u.trac.group]||''}`:'No TRAC peer group mapping in trac_groups.csv';
+  document.getElementById('uniProfile').innerHTML=
+    `<span class="chip">Region · <b>${u.region}</b></span>
+     <span class="chip">HE-BCI cluster · <b>${u.cluster}</b></span>`+
+    (u.trac
+      ? `<span class="chip chip-trac" title="${tracTip}">TRAC · <b>${u.trac.label}</b></span>`
+      : `<span class="chip chip-trac chip-trac-na" title="${tracTip}">TRAC · <b>N/A</b></span>`)+
+    `<span class="chip">Years with data · <b>${u.real.filter(v=>v!=null).length}</b></span>`;
+
+  const kp=[
+    {v:u.real[li]!=null?fmtM(u.real[li]):'–',l:'Real BCI, 2024/25',d:(u.real[li]&&u.real[li-1])?pct(u.real[li],u.real[li-1]):null,cls:''},
+    {v:u.n_sme[li]!=null?fmtN(u.n_sme[li]+u.n_lc[li]):'–',l:'Business interactions, 2024/25',d:(u.n_sme[li]!=null&&u.n_sme[li-1]!=null)?pct(u.n_sme[li]+u.n_lc[li],u.n_sme[li-1]+u.n_lc[li-1]):null,cls:'b'},
+    {v:u.lic[li]!=null?fmtM(u.lic[li]):'–',l:'Licensing income, 2024/25 (real)',d:(u.lic[li]&&u.lic[li-1])?pct(u.lic[li],u.lic[li-1]):null,cls:'y'},
+    {v:u.spin[li]!=null?fmtN(u.spin[li]):'–',l:'Spinouts surviving 3+ years',d:null,cls:'g'},
+    {v:(u.ext&&u.ext[li])?'£'+(u.ext[li]/1e6>=1?(u.ext[li]/1e6).toFixed(2)+'bn':(u.ext[li]/1000).toFixed(1)+'m'):'–',
+     l:'External investment in active spinouts, 2024/25 (real)',
+     d:(u.ext&&u.ext[li]&&u.ext[li-1])?pct(u.ext[li],u.ext[li-1]):null,cls:''}];
+  document.getElementById('uniKpis').innerHTML=kp.map(k=>
+    `<div class="kpi ${k.cls}"><div class="v">${k.v}</div><div class="l">${k.l}</div>${deltaHtml(k.d)}</div>`).join('');
+
+  // Render whichever sub-panel is currently active, then init the rest lazily
+  currentSubRenderers={bci:()=>drawUniBci(u,li),ip:()=>drawUniIp(u,li),
+                       collabs:()=>drawUniCollabs(id,u),
+                       cases:()=>drawUniCases(u),
+                       bench:()=>drawUniBench(u,li)};
+  const active=document.querySelector('#uniSubnav button.active')?.dataset.sub||'bci';
+  currentSubRenderers[active]();
+}
+
+let currentSubRenderers={};
+
+/* ---------- shared: 5-year CAGR insight strip ---------- */
+/* Computes 5-year CAGR for each metric and renders a narrative + badges. */
+function cagrInfo(arr, floor){
+  if(!arr) return null;
+  const li=YRS.length-1, a=arr[li-5], b=arr[li];
+  if(a==null||b==null||a<floor||b<0) return null;
+  return (Math.pow(b/a,1/5)-1)*100;
+}
+function cagrBand(c){
+  if(c==null) return {key:'nd',label:'insufficient data',arrow:''};
+  if(c>=10)   return {key:'signif-up',  label:'significant growth', arrow:'▲▲'};
+  if(c>=3)    return {key:'mod-up',     label:'moderate growth',    arrow:'▲'};
+  if(c>-3)    return {key:'stable',     label:'broadly stable',     arrow:'■'};
+  if(c>-10)   return {key:'mod-down',   label:'moderate decline',   arrow:'▼'};
+  return       {key:'signif-down',label:'significant decline',arrow:'▼▼'};
+}
+function drawGrowthStrip(elId, u, metrics, narrativeFn){
+  const el=document.getElementById(elId);if(!el) return;
+  const results=metrics.map(([key,name,floor])=>{
+    const c=cagrInfo(u[key],floor);
+    return {key,name,cagr:c,band:cagrBand(c)};
+  });
+  const narrative=narrativeFn?narrativeFn(u,results):'';
+  const badges=results.map(r=>{
+    const arrow=r.band.arrow?`<span class="arrow">${r.band.arrow}</span>`:'';
+    const val=r.cagr==null?'n/a':((r.cagr>0?'+':'')+r.cagr.toFixed(1)+'%/yr');
+    return `<div class="cagr-badge ${r.band.key}">
+      <div class="name">${escapeHtml(r.name)}</div>
+      <div class="val">${arrow}<span>${val}</span></div>
+      <div class="label-band">${r.band.label}</div>
+    </div>`;
+  }).join('');
+  el.innerHTML=
+    `<div class="label">5-year growth (${YRS[YRS.length-6]} → ${YRS[YRS.length-1]})</div>`+
+    (narrative?`<div class="narrative">${narrative}</div>`:'')+
+    `<div class="badges">${badges}</div>`;
+}
+
+function drawUniBci(u,li){
+  document.getElementById('t-bci').textContent='Real business collaboration income — '+u.name;
+
+  // ── 5-year growth strip ──
+  drawGrowthStrip('bciGrowthStrip', u,
+    [['real',         'Total BCI',                   100],
+     ['real_sme',     'From SMEs',                    50],
+     ['real_lc',      'From large business',         100],
+     ['consult',      'Consultancy',                 100],
+     ['fe',           'Facilities & equipment',      100],
+     ['contract',     'Contract research',           100],
+     ['n_sme',        'SME interactions',             10],
+     ['n_lc',         'Large business interactions',  10]],
+    (u,res)=>{
+      const tot=res.find(r=>r.key==='real');
+      const sme=res.find(r=>r.key==='real_sme');
+      const lc =res.find(r=>r.key==='real_lc');
+      const ct =res.find(r=>r.key==='contract');
+      const bits=[];
+      if(tot && tot.cagr!=null){
+        bits.push(`Real BCI showed <b>${tot.band.label}</b> at <b>${tot.cagr>0?'+':''}${tot.cagr.toFixed(1)}%/yr</b> over the past five years.`);
+      }
+      if(sme && lc && sme.cagr!=null && lc.cagr!=null){
+        const stronger = sme.cagr > lc.cagr ? 'SME' : 'large-business';
+        bits.push(`The <b>${stronger}</b> stream led the trajectory (SME ${sme.cagr>0?'+':''}${sme.cagr.toFixed(1)}%/yr vs large ${lc.cagr>0?'+':''}${lc.cagr.toFixed(1)}%/yr).`);
+      }
+      if(ct && ct.cagr!=null && Math.abs(ct.cagr)>=10){
+        bits.push(`Contract research is in <b>${ct.band.label}</b>.`);
+      }
+      return bits.join(' ');
+    });
+
+  // total BCI vs medians
+  const medOf=(key,filt)=>YRS.map((_,i)=>{
+    const pool=Object.values(D.unis).filter(filt).map(x=>x[key][i]).filter(v=>v!=null);
+    return pool.length?median(pool):null;});
+  Plotly.newPlot('chUniBciTotal',[
+    {x:YRS,y:u.real.map(x=>x==null?null:x/1000),name:u.name,mode:'lines+markers',
+     line:{color:C.pink,width:3.5,shape:'spline'},marker:{size:7},fill:'tozeroy',fillcolor:'rgba(255,0,144,.08)'},
+    {x:YRS,y:medOf('real',x=>x.cluster===u.cluster).map(v=>v==null?null:v/1000),name:'Cluster median',mode:'lines',line:{color:C.pd,width:2,dash:'dash'}},
+    {x:YRS,y:medOf('real',x=>x.region===u.region).map(v=>v==null?null:v/1000),name:'Region median',mode:'lines',line:{color:C.blue,width:2,dash:'dot'}},
+    {x:YRS,y:D.natMed.map(x=>x==null?null:x/1000),name:'UK median',mode:'lines',line:{color:C.pl,width:2}}
+  ],L({yaxis:{tickprefix:'£',ticksuffix:'m',rangemode:'tozero'},hovermode:'x unified'}),CFG);
+
+  Plotly.newPlot('chUniSme',[
+    {x:YRS,y:u.real_sme.map(x=>x==null?null:x/1000),name:'From SMEs',type:'bar',marker:{color:C.blue}},
+    {x:YRS,y:u.real_lc.map(x=>x==null?null:x/1000),name:'From large businesses',type:'bar',marker:{color:C.pd}}
+  ],L({barmode:'stack',yaxis:{tickprefix:'£',ticksuffix:'m'},hovermode:'x unified'}),CFG);
+
+  Plotly.newPlot('chUniMix',[
+    {x:YRS,y:u.consult.map(x=>x==null?null:x/1000),name:'Consultancy',mode:'lines+markers',line:{color:C.blue,width:2.5},marker:{size:5}},
+    {x:YRS,y:u.fe.map(x=>x==null?null:x/1000),name:'Facilities & equipment',mode:'lines+markers',line:{color:C.green,width:2.5},marker:{size:5}},
+    {x:YRS,y:u.contract.map(x=>x==null?null:x/1000),name:'Contract research',mode:'lines+markers',line:{color:C.pink,width:2.5},marker:{size:5}},
+    {x:YRS,y:u.lic.map(x=>x==null?null:x/1000),name:'Licensing',mode:'lines+markers',line:{color:C.pm,width:2.5,dash:'dot'},marker:{size:5}}
+  ],L({yaxis:{tickprefix:'£',ticksuffix:'m',rangemode:'tozero'},hovermode:'x unified'}),CFG);
+
+  // 100% stacked composition
+  const streams=[['Consultancy',u.consult,C.blue],['Facilities & equipment',u.fe,C.green],
+                 ['Contract research',u.contract,C.pink],['Licensing',u.lic,C.pm]];
+  const tot=YRS.map((_,i)=>streams.reduce((a,[,arr])=>a+(arr[i]||0),0));
+  Plotly.newPlot('chUniStack',streams.map(([name,arr,col])=>({
+    x:YRS,y:arr.map((v,i)=>tot[i]?(v||0)/tot[i]*100:0),name,stackgroup:'u',mode:'lines',
+    line:{width:.5,color:col},fillcolor:col+'88',
+    customdata:arr.map(v=>v==null?0:v/1000),
+    hovertemplate:name+': %{y:.1f}% (£%{customdata:.2f}m)<extra></extra>'
+  })),L({yaxis:{ticksuffix:'%',range:[0,100]},hovermode:'x unified'}),CFG);
+
+  Plotly.newPlot('chUniAct',[
+    {x:YRS,y:u.n_sme,name:'SME interactions',type:'bar',marker:{color:C.blue}},
+    {x:YRS,y:u.n_lc,name:'Large business interactions',type:'bar',marker:{color:C.pm}},
+    {x:YRS,y:u.spin,name:'Spinouts (3+ yrs)',mode:'lines+markers',line:{color:C.pink,width:3},marker:{size:6},yaxis:'y2'}
+  ],L({barmode:'stack',yaxis2:{overlaying:'y',side:'right',gridcolor:'rgba(0,0,0,0)',rangemode:'tozero'},
+       hovermode:'x unified'}),CFG);
+}
+
+function drawUniIp(u,li){
+  // ── 5-year growth strip (licensing + spinouts) ──
+  drawGrowthStrip('ipGrowthStrip', u,
+    [['lic',     'Licensing income',                    100],
+     ['lic_sme', 'Licensing — SMEs',                     20],
+     ['lic_lc',  'Licensing — large business',           50],
+     ['lic_n',   'Licences granted',                      1],
+     ['spin',    'Active spinouts (3+ yrs)',              1],
+     ['ext',     'External investment in spinouts',     100],
+     ['pat',     'Patents granted',                       1],
+     ['disclosures', 'IP disclosures',                       1]],
+    (u,res)=>{
+      const lic=res.find(r=>r.key==='lic');
+      const spin=res.find(r=>r.key==='spin');
+      const ext=res.find(r=>r.key==='ext');
+      const bits=[];
+      if(lic && lic.cagr!=null){
+        bits.push(`Licensing income shows <b>${lic.band.label}</b> at <b>${lic.cagr>0?'+':''}${lic.cagr.toFixed(1)}%/yr</b>.`);
+      }
+      if(spin && spin.cagr!=null){
+        bits.push(`The active spinout portfolio (surviving 3+ years) is in <b>${spin.band.label}</b> (${spin.cagr>0?'+':''}${spin.cagr.toFixed(1)}%/yr).`);
+      } else if(spin) {
+        bits.push(`Insufficient five-year data on spinouts to compute a growth rate.`);
+      }
+      if(ext && ext.cagr!=null && Math.abs(ext.cagr)>=10){
+        bits.push(`External investment in those spinouts is in <b>${ext.band.label}</b>.`);
+      }
+      return bits.join(' ');
+    });
+
+  // sums for current year, real £000
+  const sumNz=(...arrs)=>arrs.reduce((a,arr)=>a+((arr&&arr[li])||0),0);
+  const licSme=sumNz(u.lic_nsw_sme,u.lic_ip_sme,u.lic_sw_sme);
+  const licLc=sumNz(u.lic_nsw_lc,u.lic_ip_lc,u.lic_sw_lc);
+  const licSw=sumNz(u.lic_sw_sme,u.lic_sw_lc);
+  const licNonSw=sumNz(u.lic_nsw_sme,u.lic_nsw_lc,u.lic_ip_sme,u.lic_ip_lc);
+  const licNSme=sumNz(u.lic_n_nsw_sme,u.lic_n_sw_sme);
+  const licNLc=sumNz(u.lic_n_nsw_lc,u.lic_n_sw_lc);
+  const fmtMaybe=v=>v?(v>=1000?'£'+(v/1000).toFixed(2)+'m':'£'+Math.round(v)+'k'):'–';
+  document.getElementById('ipKpis').innerHTML=[
+    {v:fmtMaybe(licSme+licLc),l:'Total business licensing income, 2024/25 (real)',cls:''},
+    {v:licSme+licLc?Math.round(licSme/(licSme+licLc)*100)+'%':'–',l:'Share of licensing income from SMEs',cls:'b'},
+    {v:licSw+licNonSw?Math.round(licSw/(licSw+licNonSw)*100)+'%':'–',l:'Share from software licensing',cls:'y'},
+    {v:fmtN(licNSme+licNLc)||'0',l:'Licences granted to business, 2024/25',cls:'g'}
+  ].map(k=>`<div class="kpi ${k.cls}"><div class="v">${k.v}</div><div class="l">${k.l}</div></div>`).join('');
+
+  // Licensing overview: total income + licences granted
+  const licTot=YRS.map((_,i)=>sumNzAt(u,i,['lic_nsw_sme','lic_ip_sme','lic_sw_sme','lic_nsw_lc','lic_ip_lc','lic_sw_lc']));
+  const licNTot=YRS.map((_,i)=>sumNzAt(u,i,['lic_n_nsw_sme','lic_n_nsw_lc','lic_n_sw_sme','lic_n_sw_lc']));
+  Plotly.newPlot('chUniLicTrend',[
+    {x:YRS,y:licTot.map(v=>v/1000),name:'Licensing income (£m, real)',type:'bar',marker:{color:C.pm}},
+    {x:YRS,y:licNTot,name:'Licences granted',mode:'lines+markers',line:{color:C.pink,width:3},marker:{size:6},yaxis:'y2'}
+  ],L({yaxis:{tickprefix:'£',ticksuffix:'m',rangemode:'tozero'},
+       yaxis2:{overlaying:'y',side:'right',gridcolor:'rgba(0,0,0,0)',rangemode:'tozero',title:{text:'Licences',font:{size:11}}},
+       hovermode:'x unified'}),CFG);
+
+  // by business size: income
+  const licSizeSme=YRS.map((_,i)=>sumNzAt(u,i,['lic_nsw_sme','lic_ip_sme','lic_sw_sme']));
+  const licSizeLc=YRS.map((_,i)=>sumNzAt(u,i,['lic_nsw_lc','lic_ip_lc','lic_sw_lc']));
+  Plotly.newPlot('chUniLicSize',[
+    {x:YRS,y:licSizeSme.map(v=>v/1000),name:'SMEs',type:'bar',marker:{color:C.blue}},
+    {x:YRS,y:licSizeLc.map(v=>v/1000),name:'Large businesses',type:'bar',marker:{color:C.pd}}
+  ],L({barmode:'stack',yaxis:{tickprefix:'£',ticksuffix:'m'},hovermode:'x unified'}),CFG);
+
+  // by business size: counts
+  const licNSizeSme=YRS.map((_,i)=>sumNzAt(u,i,['lic_n_nsw_sme','lic_n_sw_sme']));
+  const licNSizeLc=YRS.map((_,i)=>sumNzAt(u,i,['lic_n_nsw_lc','lic_n_sw_lc']));
+  Plotly.newPlot('chUniLicSizeN',[
+    {x:YRS,y:licNSizeSme,name:'SMEs',type:'bar',marker:{color:C.blue}},
+    {x:YRS,y:licNSizeLc,name:'Large businesses',type:'bar',marker:{color:C.pd}}
+  ],L({barmode:'stack',yaxis:{rangemode:'tozero'},hovermode:'x unified'}),CFG);
+
+  // software vs non-software income: 4 series stacked
+  Plotly.newPlot('chUniLicSw',[
+    {x:YRS,y:u.lic_nsw_sme.map(v=>v==null?0:v/1000),name:'Non-software · SMEs',type:'bar',marker:{color:C.pink,opacity:0.55}},
+    {x:YRS,y:u.lic_nsw_lc.map(v=>v==null?0:v/1000),name:'Non-software · Large',type:'bar',marker:{color:C.pink}},
+    {x:YRS,y:u.lic_ip_sme.map(v=>v==null?0:v/1000),name:'Other IP · SMEs',type:'bar',marker:{color:C.yellow,opacity:0.55}},
+    {x:YRS,y:u.lic_ip_lc.map(v=>v==null?0:v/1000),name:'Other IP · Large',type:'bar',marker:{color:C.yellow}},
+    {x:YRS,y:u.lic_sw_sme.map(v=>v==null?0:v/1000),name:'Software · SMEs',type:'bar',marker:{color:C.blue,opacity:0.55}},
+    {x:YRS,y:u.lic_sw_lc.map(v=>v==null?0:v/1000),name:'Software · Large',type:'bar',marker:{color:C.blue}}
+  ],L({barmode:'stack',yaxis:{tickprefix:'£',ticksuffix:'m'},hovermode:'x unified',
+       legend:{orientation:'h',y:-0.18,font:{size:10.5}}}),CFG);
+
+  // software vs non-software counts
+  Plotly.newPlot('chUniLicSwN',[
+    {x:YRS,y:u.lic_n_nsw_sme,name:'Non-software · SMEs',type:'bar',marker:{color:C.pink,opacity:0.55}},
+    {x:YRS,y:u.lic_n_nsw_lc,name:'Non-software · Large',type:'bar',marker:{color:C.pink}},
+    {x:YRS,y:u.lic_n_sw_sme,name:'Software · SMEs',type:'bar',marker:{color:C.blue,opacity:0.55}},
+    {x:YRS,y:u.lic_n_sw_lc,name:'Software · Large',type:'bar',marker:{color:C.blue}}
+  ],L({barmode:'stack',hovermode:'x unified',yaxis:{rangemode:'tozero'},
+       legend:{orientation:'h',y:-0.18,font:{size:10.5}}}),CFG);
+
+  // IP pipeline
+  Plotly.newPlot('chUniPipeline',[
+    {x:YRS,y:u.disclosures,name:'Disclosures',mode:'lines+markers',line:{color:C.blue,width:2.5},marker:{size:5}},
+    {x:YRS,y:u.pat_filed,name:'Patents filed',mode:'lines+markers',line:{color:C.green,width:2.5},marker:{size:5}},
+    {x:YRS,y:u.pat_ext,name:'External patents held',mode:'lines+markers',line:{color:C.yellow,width:2.5},marker:{size:5}},
+    {x:YRS,y:u.pat,name:'Patents granted',mode:'lines+markers',line:{color:C.pm,width:2.5},marker:{size:5}},
+    {x:YRS,y:licNTot,name:'Licences granted',mode:'lines+markers',line:{color:C.pink,width:3},marker:{size:6}}
+  ],L({hovermode:'x unified',yaxis:{rangemode:'tozero'}}),CFG);
+
+  // === Spinout KPIs ===
+  const pb=capPrimary();
+  const ext=capSeries(u,pb),spin=u.spin||[];
+  const extNom=capSeries(u,'nominal');
+  const fte=u.spin_fte||[], tov=u.spin_turnover||[];
+  const staff=u.staff_startup||[], student=u.student_startup||[], social=u.social_enterprise||[];
+  const cumExt=ext.reduce((a,v)=>a+(v||0),0);
+  const peakExt=Math.max(...ext.map(v=>v||0));
+  const peakIdx=ext.findIndex(v=>v===peakExt);
+  const avgExtPerSpin=(spin[li]&&ext[li])?ext[li]/spin[li]:null;
+  document.getElementById('spinUKpis').innerHTML=[
+    {v:fmtN(spin[li]||0),l:'CPM spin-outs (surviving 3+ yrs), 2024/25',cls:''},
+    {v:fte[li]?fmtN(fte[li])+' FTE':'–',l:'Spinout employment, 2024/25 (headcount FTE)',cls:'b'},
+    {v:tov[li]?'£'+(tov[li]/1000>=1000?(tov[li]/1e6).toFixed(2)+'bn':(tov[li]/1000).toFixed(1)+'m'):'–',l:'Spinout turnover, 2024/25 (nominal)',cls:''},
+    {v:fmtCapK(ext[li])+(CAP_BASIS==='both'?`<span class="cap-alt">${fmtCapK(extNom[li])} nominal</span>`:''),l:'External investment, 2024/25 ('+(CAP_BASIS==='both'?'real vs nominal':capLbl(pb))+')',cls:'g'},
+    {v:fmtCapK(cumExt)+(CAP_BASIS==='both'?`<span class="cap-alt">${fmtCapK(extNom.reduce((a,v)=>a+(v||0),0))} nominal</span>`:''),l:'Cumulative external investment, 2014/15–2024/25 ('+(CAP_BASIS==='both'?'real vs nominal':capLbl(pb))+')',cls:'g'},
+    {v:peakExt?fmtCapK(peakExt)+' ('+YRS[peakIdx]+')':'–',l:'Peak annual investment ('+capLbl(pb)+')',cls:'y'},
+    {v:fmtN(staff[li]||0),l:'Staff start-ups (surviving 3+ yrs), 2024/25',cls:'y'},
+    {v:fmtN(student[li]||0),l:'Student (graduate) start-ups, 2024/25',cls:''},
+  ].map(k=>`<div class="kpi ${k.cls}"><div class="v">${k.v}</div><div class="l">${k.l}</div></div>`).join('');
+
+  Plotly.newPlot('chUniSpin',[
+    ...capBases().map(b=>({x:YRS,y:capSeries(u,b).map(v=>v==null?null:v/1000),
+      name:'External investment (£m, '+capLbl(b)+')',type:'bar',marker:{color:capColour(b,C.green)},
+      hovertemplate:'%{x}: £%{y:.1f}m ('+capLbl(b)+')<extra></extra>'})),
+    {x:YRS,y:spin,name:'Spinouts (3+ yrs)',mode:'lines+markers',line:{color:C.pink,width:3},marker:{size:6},yaxis:'y2'}
+  ],L({barmode:'group',yaxis:{tickprefix:'£',ticksuffix:'m',rangemode:'tozero'},
+       yaxis2:{overlaying:'y',side:'right',gridcolor:'rgba(0,0,0,0)',rangemode:'tozero'},
+       hovermode:'x unified'}),CFG);
+
+  // === Spinout employment + turnover ===
+  Plotly.newPlot('chUniSpinFte',[
+    {x:YRS,y:fte,name:'Spinout employment (FTE)',type:'bar',marker:{color:C.pd,opacity:.85},
+     hovertemplate:'<b>%{x}</b><br>FTE: %{y:,}<extra></extra>'},
+    {x:YRS,y:tov.map(v=>v==null?null:v/1000),name:'Spinout turnover (£m, nominal)',
+     mode:'lines+markers',line:{color:C.pink,width:3},marker:{size:6},yaxis:'y2',
+     hovertemplate:'<b>%{x}</b><br>Turnover: £%{y:.1f}m<extra></extra>'}
+  ],L({yaxis:{title:{text:'FTE',font:{size:11}},rangemode:'tozero'},
+       yaxis2:{overlaying:'y',side:'right',tickprefix:'£',ticksuffix:'m',gridcolor:'rgba(0,0,0,0)',rangemode:'tozero'},
+       hovermode:'x unified',legend:{orientation:'h',y:-0.18,font:{size:10.5}}}),CFG);
+
+  // === Three distinct start-up categories ===
+  Plotly.newPlot('chUniSpinCategories',[
+    {x:YRS,y:spin,   name:'Spin-outs (HE ownership + other)', type:'bar',marker:{color:C.pd},
+     hovertemplate:'<b>%{x}</b><br>Spin-outs: %{y}<extra></extra>'},
+    {x:YRS,y:staff,  name:'Staff start-ups',                  type:'bar',marker:{color:C.blue},
+     hovertemplate:'<b>%{x}</b><br>Staff start-ups: %{y}<extra></extra>'},
+    {x:YRS,y:student,name:'Student (graduate) start-ups',     type:'bar',marker:{color:C.pink},
+     hovertemplate:'<b>%{x}</b><br>Student start-ups: %{y}<extra></extra>'}
+  ],L({barmode:'group',
+       yaxis:{title:{text:'Firms surviving 3+ years',font:{size:11}},rangemode:'tozero'},
+       hovermode:'x unified',legend:{orientation:'h',y:-0.18,font:{size:10.5}}}),CFG);
+
+  // cumulative external investment
+  Plotly.newPlot('chUniSpinCum',capBases().map(b=>{
+    let run=0;const cum=capSeries(u,b).map(v=>{run+=v||0;return run/1000;});
+    const nominal=b==='nominal';
+    return {x:YRS,y:cum,type:'scatter',mode:'lines+markers',name:'Cumulative ('+capLbl(b)+')',
+      fill:CAP_BASIS==='both'&&nominal?'none':'tozeroy',
+      fillcolor:nominal?'rgba(0,133,202,.14)':'rgba(0,179,136,.18)',
+      line:{color:capColour(b,C.green),width:3,dash:CAP_BASIS==='both'&&nominal?'dot':'solid'},marker:{size:6},
+      hovertemplate:'%{x}: £%{y:.1f}m cumulative ('+capLbl(b)+')<extra></extra>'};
+  }),L({showlegend:CAP_BASIS==='both',legend:{orientation:'h',y:-0.18,font:{size:10.5}},
+       yaxis:{tickprefix:'£',ticksuffix:'m',rangemode:'tozero'}}),CFG);
+
+  // investment per spinout efficiency
+  Plotly.newPlot('chUniSpinEff',capBases().map(b=>{
+    const e=capSeries(u,b);
+    return {x:YRS,y:YRS.map((_,i)=>(spin[i]&&e[i])?(e[i]/spin[i])/1000:null),type:'scatter',mode:'lines+markers',
+      name:'Per spinout ('+capLbl(b)+')',line:{color:capColour(b,C.pm),width:2.5,dash:b==='nominal'&&CAP_BASIS==='both'?'dot':'solid'},marker:{size:6},
+      hovertemplate:'%{x}: £%{y:.2f}m per spinout ('+capLbl(b)+')<extra></extra>'};
+  }),L({showlegend:CAP_BASIS==='both',legend:{orientation:'h',y:-0.18,font:{size:10.5}},
+       yaxis:{tickprefix:'£',ticksuffix:'m',rangemode:'tozero'}}),CFG);
+}
+
+function sumNzAt(u,i,keys){let s=0;for(const k of keys){const v=u[k]&&u[k][i];if(v)s+=v;}return s;}
+
+function drawUniCollabs(ukprn,u){
+  const C_DOMAIN={'Advanced Manufacturing':C.pink,'Energy & Clean Tech':C.green,'Agri-Food & Environment':'#88c14b',
+    'Digital & ICT':C.blue,'Pharmaceuticals & Biotech':C.pd,'Creative & Cultural':'#d05fb3','Other / Unclassified':C.pl,
+    'Construction & Infrastructure':'#c08f4a','Finance & Business Services':C.pm,'Healthcare & Medical Devices':'#ff6b6b',
+    'Space & Defence':'#1f3a5f'};
+
+  const rec=D.collabs.per_provider[ukprn];
+  const head=document.getElementById('collabsHeader');
+  const allYears=D.collabs.years;
+
+  if(!rec){
+    head.innerHTML='<div style="font-size:13px;letter-spacing:1.5px;font-weight:700;color:#d9b9ea;text-transform:uppercase">UK business collaborations · Gateway to Research</div>'+
+      '<div style="font-size:16px;margin-top:8px">No matched records for <b>'+u.name+'</b></div>'+
+      '<div style="font-size:12.5px;color:#cfc8da;margin-top:6px">Of 365 lead organisations in the GtR business-collaborations dataset, 126 match HE-BCI providers by name. Smaller, specialist or recently renamed providers may not match — see headline findings tab for the national picture.</div>';
+    document.getElementById('collabsKpis').innerHTML='';
+    ['chCollabsYear','chCollabsDomain','chCollabsType','chCollabsTop','chCollabsFunder','chCollabsGrant','chPartnerMap'].forEach(id=>{
+      const el=document.getElementById(id); el.innerHTML=''; el.data=null;});
+    document.getElementById('partnerMapNote').innerHTML='';
+    document.getElementById('collabsEmpty').style.display='block';
+    return;
+  }
+  document.getElementById('collabsEmpty').style.display='none';
+
+  const valM=rec.total_grant_value/1e6;
+  const meanV=rec.total_links?rec.total_grant_value/rec.total_links:0;
+  const topDomain=rec.by_industry[0];
+  head.innerHTML=
+    '<div style="font-size:13px;letter-spacing:1.5px;font-weight:700;color:#d9b9ea;text-transform:uppercase">UK business collaborations · Gateway to Research</div>'+
+    '<div style="font-size:17px;margin-top:6px">'+u.name+'</div>'+
+    '<div style="font-size:13px;color:#cfc8da;margin-top:8px">'+
+      (topDomain?'Most active in <b style="color:#fff">'+topDomain.name+'</b> ('+topDomain.count+' links). ':'')+
+      'Total grant value '+(valM>=1000?'£'+(valM/1000).toFixed(2)+'bn':'£'+valM.toFixed(0)+'m')+
+      ' over '+rec.unique_projects.toLocaleString()+' distinct projects.</div>';
+
+  document.getElementById('collabsKpis').innerHTML=[
+    {v:fmtN(rec.total_links),l:'Total UK-business collaboration links',cls:''},
+    {v:fmtN(rec.unique_businesses),l:'Unique UK businesses involved',cls:'b'},
+    {v:fmtN(rec.unique_projects),l:'Distinct projects with a business partner',cls:'g'},
+    {v:meanV>=1e6?'£'+(meanV/1e6).toFixed(2)+'m':'£'+Math.round(meanV/1000)+'k',
+     l:'Mean grant value per collaboration',cls:'y'}
+  ].map(k=>`<div class="kpi ${k.cls}"><div class="v">${k.v}</div><div class="l">${k.l}</div></div>`).join('');
+
+  // ── trend: counts + value
+  const counts=allYears.map(y=>rec.by_year[y]||0);
+  const values=allYears.map(y=>(rec.value_by_year[y]||0)/1e6);
+  Plotly.newPlot('chCollabsYear',[
+    {x:allYears,y:counts,name:'Collaboration links',type:'bar',marker:{color:C.pm}},
+    {x:allYears,y:values,name:'Grant value (£m)',mode:'lines+markers',
+     line:{color:C.pink,width:3},marker:{size:6},yaxis:'y2'}
+  ],L({xaxis:{dtick:1},yaxis:{rangemode:'tozero',title:{text:'Links',font:{size:11}}},
+       yaxis2:{overlaying:'y',side:'right',rangemode:'tozero',gridcolor:'rgba(0,0,0,0)',
+               tickprefix:'£',ticksuffix:'m',title:{text:'Grant value',font:{size:11}}},
+       hovermode:'x unified'}),CFG);
+
+  // ── industry domains: horizontal bar, coloured by domain
+  const dom=rec.by_industry.slice().reverse();
+  Plotly.newPlot('chCollabsDomain',[{
+    type:'bar',orientation:'h',
+    y:dom.map(d=>d.name),x:dom.map(d=>d.count),
+    marker:{color:dom.map(d=>C_DOMAIN[d.name]||C.pl)},
+    text:dom.map(d=>d.count),textposition:'outside',textfont:{size:11},
+    hovertemplate:'%{y}: %{x} links<extra></extra>'
+  }],L({margin:{l:200,r:50,t:10,b:40},height:Math.max(280,dom.length*32),showlegend:false,
+        xaxis:{rangemode:'tozero',title:{text:'Collaboration links',font:{size:11}}}}),CFG);
+
+  // ── collab types: donut
+  donut('chCollabsType',rec.by_collab_type,
+    [C.blue,C.yellow,C.pink,C.green,C.pm,C.pd,C.pl,'#88c14b','#d05fb3','#c08f4a']);
+
+  // ── top 20 businesses: horizontal bar coloured by their dominant domain (unknown here, so single tone)
+  const tops=rec.top_businesses.slice(0,20).reverse();
+  Plotly.newPlot('chCollabsTop',[{
+    type:'bar',orientation:'h',
+    y:tops.map(b=>b.name.length>40?b.name.slice(0,38)+'…':b.name),
+    x:tops.map(b=>b.count),
+    marker:{color:C.pink,opacity:.85,line:{color:C.pd,width:.5}},
+    text:tops.map(b=>b.count),textposition:'outside',textfont:{size:11},
+    customdata:tops.map(b=>b.name),
+    hovertemplate:'<b>%{customdata}</b><br>%{x} collaboration links<extra></extra>'
+  }],L({margin:{l:240,r:50,t:10,b:40},height:Math.max(420,tops.length*24),showlegend:false,
+        xaxis:{rangemode:'tozero',title:{text:'Collaboration links',font:{size:11}}}}),CFG);
+
+  // ── funder & grant category donuts
+  donut('chCollabsFunder',rec.by_funder,[C.pd,C.pink,C.blue,C.green,C.yellow,C.pm,'#88c14b','#d05fb3','#c08f4a','#ff6b6b']);
+  donut('chCollabsGrant',rec.by_grant_cat,[C.blue,C.yellow,C.pink,C.green,C.pm,C.pd,C.pl,'#88c14b','#d05fb3','#c08f4a']);
+
+  // ── partner location map ───────────────────────────────────────────
+  drawPartnerMap(ukprn,u,rec);
+}
+
+function drawPartnerMap(ukprn,u,rec){
+  const pts=(D.partnerLocs||{})[ukprn]||[];
+  const note=document.getElementById('partnerMapNote');
+  const total=rec.total_links;
+  if(!pts.length){
+    Plotly.newPlot('chPartnerMap',[{type:'scattermapbox',lat:[],lon:[]}],
+      L({height:520,mapbox:{style:'carto-positron',center:{lat:54.3,lon:-2.5},zoom:4.6},
+         margin:{l:0,r:0,t:0,b:0}}),CFG);
+    note.innerHTML='<b>No geocoded partners for this provider yet.</b> '+
+      'The bundled starter geocodes the ~20 most-cited UK businesses. To map all partners, '+
+      'download the Companies House snapshot and run <code>python enrich_companies.py</code> '+
+      '— full instructions in the kit README.';
+    return;
+  }
+  const placed=pts.reduce((a,p)=>a+p.n,0);
+  // colour by region group, size by count (sqrt scale so big partners do not dominate)
+  const regionGroup={'East of England':C.blue,'East Midlands':C.blue,'West Midlands':C.blue,
+    'London':C.pink,'South East':C.pink,'South West':C.pink,
+    'North East':C.green,'North West':C.green,'Yorkshire and The Humber':C.green,
+    'Scotland':C.pm,'Wales':C.pm,'Northern Ireland':C.pm};
+  const maxN=Math.max(...pts.map(p=>p.n));
+  Plotly.newPlot('chPartnerMap',[{
+    type:'scattermapbox',
+    lat:pts.map(p=>p.lat),lon:pts.map(p=>p.lng),
+    text:pts.map(p=>`<b>${p.name}</b><br>${p.n} collaboration${p.n>1?'s':''} with ${u.name}<br>${p.postcode||''} · ${p.region||''}`),
+    marker:{
+      size:pts.map(p=>8+Math.sqrt(p.n/maxN)*36),
+      color:pts.map(p=>regionGroup[p.region]||C.pl),
+      opacity:.78,
+      sizemode:'diameter'
+    },
+    hovertemplate:'%{text}<extra></extra>',
+    name:'Partners'
+  }],L({height:520,
+    mapbox:{style:'carto-positron',center:{lat:54.3,lon:-2.5},zoom:4.7},
+    margin:{l:0,r:0,t:0,b:0},showlegend:false}),CFG);
+
+  const cov=Math.round(placed/total*100);
+  note.innerHTML=`Showing <b>${pts.length}</b> unique business partners, covering <b>${placed}/${total} collaborations (${cov}%)</b>. Coordinates from the bundled starter file. Run <code>python enrich_companies.py</code> with the Companies House snapshot to extend coverage to all UK partners. Bubble colour groups regions: <span style="color:${C.pink};font-weight:700">southern England</span>, <span style="color:${C.blue};font-weight:700">Midlands &amp; East</span>, <span style="color:${C.green};font-weight:700">northern England</span>, <span style="color:${C.pm};font-weight:700">devolved nations</span>.`;
+}
+
+function donut(id, items, palette){
+  if(!items){const el=document.getElementById(id);if(el){el.innerHTML='';el.data=null;}return;}
+  if(!items.length){const el=document.getElementById(id);if(el){el.innerHTML='<p class="note" style="text-align:center;padding:30px">No data.</p>';el.data=null;}return;}
+  Plotly.newPlot(id,[{
+    type:'pie',hole:.55,
+    labels:items.map(d=>d.name),values:items.map(d=>d.count),
+    marker:{colors:items.map((_,i)=>palette[i%palette.length]),line:{color:'#fff',width:2}},
+    textinfo:'percent',textposition:'inside',insidetextfont:{color:'#fff',size:11},
+    hovertemplate:'%{label}: %{value} (%{percent})<extra></extra>',sort:false
+  }],L({showlegend:true,legend:{orientation:'v',y:.5,x:1.02,font:{size:11}},
+        margin:{l:10,r:140,t:10,b:10}}),CFG);
+}
+
+function drawUniCases(u){
+  // Find this provider's ukprn (the explorer passes us the full uni record; we
+  // need to recover the key it was indexed under)
+  const ukprn=Object.keys(D.unis).find(k=>D.unis[k]===u);
+  // Stories are pre-matched at build time — read the ukprns list directly
+  const matches=(D.cases||[]).filter(c=>(c.ukprns||[]).includes(ukprn));
+
+  const head=document.getElementById('uniCasesHeader');
+  if(!matches.length){
+    head.innerHTML=
+      '<div style="font-size:13px;letter-spacing:1.5px;font-weight:700;color:#d9b9ea;text-transform:uppercase">NCUB case studies</div>'+
+      '<div style="font-size:16px;margin-top:8px">No case studies indexed for <b>'+escapeHtml(u.name)+'</b></div>'+
+      '<div style="font-size:12.5px;color:#cfc8da;margin-top:6px">The case studies tab indexes ' + (D.cases||[]).length + ' NCUB success stories. To extend coverage, run <code style="color:#fff">python fetch_case_studies.py</code> and rebuild.</div>';
+    document.getElementById('uniCasesKpis').innerHTML='';
+    document.getElementById('uniCaseGallery').innerHTML='';
+    document.getElementById('uniCaseGalleryTitle').textContent='Case study library';
+    ['chUniCasesSector','chUniCasesThemes'].forEach(id=>{
+      const el=document.getElementById(id);el.innerHTML='';el.data=null;});
+    document.getElementById('uniCasesEmpty').style.display='block';
+    return;
+  }
+  document.getElementById('uniCasesEmpty').style.display='none';
+
+  // Aggregate sector and theme
+  const secCnt={},themeCnt={};
+  const partners=new Set();
+  let earliest=null,latest=null;
+  for(const c of matches){
+    if(c.sector) secCnt[c.sector]=(secCnt[c.sector]||0)+1;
+    for(const t of (c.topics||[])) themeCnt[t]=(themeCnt[t]||0)+1;
+    if(c.partner) partners.add(c.partner);
+    if(c.date){
+      const y=parseInt(c.date.slice(0,4));
+      if(y>1990 && (earliest===null||y<earliest)) earliest=y;
+      if(y>1990 && (latest===null||y>latest)) latest=y;
+    }
+  }
+  const topSector=Object.entries(secCnt).sort((a,b)=>b[1]-a[1])[0];
+  const topTheme=Object.entries(themeCnt).sort((a,b)=>b[1]-a[1])[0];
+
+  head.innerHTML=
+    '<div style="font-size:13px;letter-spacing:1.5px;font-weight:700;color:#d9b9ea;text-transform:uppercase">NCUB case studies</div>'+
+    '<div style="font-size:17px;margin-top:6px">'+escapeHtml(u.name)+'</div>'+
+    '<div style="font-size:13px;color:#cfc8da;margin-top:8px">'+
+      (topSector?'Most stories concentrate in <b style="color:#fff">'+escapeHtml(topSector[0])+'</b>'+(topSector[1]>1?' ('+topSector[1]+' stories)':'')+'. ':'')+
+      (topTheme?'Recurring theme: <b style="color:#fff">'+escapeHtml(topTheme[0])+'</b>'+(topTheme[1]>1?' ('+topTheme[1]+' mentions)':'')+'. ':'')+
+      (earliest&&latest&&earliest!==latest?'Span '+earliest+'–'+latest+'.':'')+
+    '</div>';
+
+  document.getElementById('uniCasesKpis').innerHTML=[
+    {v:fmtN(matches.length),l:'Case studies featuring this institution',cls:''},
+    {v:fmtN(partners.size),l:'Distinct business partners across stories',cls:'b'},
+    {v:fmtN(Object.keys(secCnt).filter(s=>s!=='Other / Unclassified').length),l:'Sectors represented',cls:'y'},
+    {v:fmtN(Object.keys(themeCnt).length),l:'Collaboration themes surfaced',cls:'g'}
+  ].map(k=>`<div class="kpi ${k.cls}"><div class="v">${k.v}</div><div class="l">${k.l}</div></div>`).join('');
+
+  // sector donut (or bar if just 1–2 sectors)
+  const sortedSec=Object.entries(secCnt).sort((a,b)=>b[1]-a[1]);
+  if(sortedSec.length>=2){
+    Plotly.newPlot('chUniCasesSector',[{
+      type:'pie',hole:.55,
+      labels:sortedSec.map(s=>s[0]),values:sortedSec.map(s=>s[1]),
+      marker:{colors:sortedSec.map(s=>SECTOR_COL[s[0]]||C.pl),line:{color:'#fff',width:2}},
+      textinfo:'percent',textposition:'inside',insidetextfont:{color:'#fff',size:11},
+      hovertemplate:'%{label}: %{value}<extra></extra>',sort:false
+    }],L({height:300,showlegend:true,legend:{orientation:'v',y:.5,x:1.02,font:{size:11}},
+          margin:{l:10,r:160,t:10,b:10}}),CFG);
+  } else if(sortedSec.length===1){
+    const el=document.getElementById('chUniCasesSector');
+    el.innerHTML='<p style="text-align:center;padding:60px 20px;font-size:14px;color:var(--purple-dark)">All '+matches.length+' case study'+(matches.length>1?'ies':'')+' are in <b>'+escapeHtml(sortedSec[0][0])+'</b>.</p>';
+    el.data=null;
+  } else {
+    const el=document.getElementById('chUniCasesSector');
+    el.innerHTML='<p class="note" style="text-align:center;padding:60px">No sector data.</p>';
+    el.data=null;
+  }
+
+  // theme bar
+  const sortedTh=Object.entries(themeCnt).sort((a,b)=>b[1]-a[1]).slice(0,12).reverse();
+  if(sortedTh.length){
+    Plotly.newPlot('chUniCasesThemes',[{
+      type:'bar',orientation:'h',
+      y:sortedTh.map(t=>t[0]),x:sortedTh.map(t=>t[1]),
+      marker:{color:C.pink,opacity:.85},text:sortedTh.map(t=>t[1]),textposition:'outside',textfont:{size:11}
+    }],L({margin:{l:200,r:50,t:10,b:40},height:Math.max(280,sortedTh.length*26),showlegend:false,
+          xaxis:{rangemode:'tozero',title:{text:'Mentions',font:{size:11}}}}),CFG);
+  } else {
+    const el=document.getElementById('chUniCasesThemes');
+    el.innerHTML='<p class="note" style="text-align:center;padding:60px">No themes extracted yet — re-run <code>python fetch_case_studies.py --reclassify</code>.</p>';
+    el.data=null;
+  }
+
+  // gallery + search
+  const draw=()=>{
+    const q=(document.getElementById('uniCaseSearch').value||'').toLowerCase().trim();
+    const filt=q?matches.filter(c=>(((c.title||'')+' '+(c.partner||'')+' '+(c.summary||'')).toLowerCase().includes(q))):matches;
+    document.getElementById('uniCaseGalleryTitle').textContent=
+      'Case study library · '+filt.length+' of '+matches.length+(matches.length===1?' story':' stories');
+    document.getElementById('uniCaseGallery').innerHTML=filt.map(c=>{
+      const cls='casecard '+(SECTOR_CLASS[c.sector]||'');
+      const tags=(c.topics||[]).slice(0,3).map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('');
+      return `<a class="${cls}" href="${c.url}" target="_blank" rel="noopener">
+        <div class="title">${escapeHtml(c.title)}</div>
+        <div class="meta">
+          ${c.partner?'<b>'+escapeHtml(c.partner)+'</b>':''}
+          ${c.date?(c.partner?' · ':'')+escapeHtml(c.date):''}
+        </div>
+        <div class="summary">${escapeHtml((c.summary||'').slice(0,260))}${c.summary&&c.summary.length>260?'…':''}</div>
+        <div class="footer">
+          <div>${tags||'<span class="tag">'+escapeHtml(c.sector||'')+'</span>'}</div>
+          <span class="read">Read →</span>
+        </div></a>`;
+    }).join('')||'<p class="note" style="grid-column:1/-1;text-align:center;padding:40px">No stories match this search.</p>';
+  };
+  document.getElementById('uniCaseSearch').oninput=draw;
+  document.getElementById('uniCaseSearch').value='';
+  draw();
+}
+
+function drawUniBench(u,li){
+  const bmSel=document.getElementById('benchMetric');
+  const [bk,blab,bunit]=BENCH_METRICS.find(m=>m[0]===bmSel.value)||BENCH_METRICS[0];
+  document.getElementById('t-bench').textContent=blab+' — '+u.name;
+  const medOf=filt=>YRS.map((_,i)=>{
+    const pool=Object.values(D.unis).filter(filt).map(x=>x[bk][i]).filter(v=>v!=null);
+    return pool.length?median(pool):null;});
+  const sc=bunit==='£m'?(v=>v==null?null:v/1000):(v=>v);
+  const yax=bunit==='£m'?{tickprefix:'£',ticksuffix:'m',rangemode:'tozero'}:{rangemode:'tozero'};
+  Plotly.newPlot('chUniBench',[
+    {x:YRS,y:u[bk].map(sc),name:u.name,mode:'lines+markers',line:{color:C.pink,width:3.5},marker:{size:7}},
+    {x:YRS,y:medOf(x=>x.cluster===u.cluster).map(sc),name:'Cluster median',mode:'lines',line:{color:C.pd,width:2,dash:'dash'}},
+    {x:YRS,y:medOf(x=>x.region===u.region).map(sc),name:'Region median',mode:'lines',line:{color:C.blue,width:2,dash:'dot'}},
+    {x:YRS,y:medOf(()=>true).map(sc),name:'UK median',mode:'lines',line:{color:C.pl,width:2}}
+  ],L({yaxis:yax,hovermode:'x unified'}),CFG);
+
+  const metrics=[['Real BCI','real'],['SME interactions','n_sme'],['Large business interactions','n_lc'],['Licensing income','lic'],['Spinouts','spin']];
+  const groups=[['cluster','within cluster',k=>D.unis[k].cluster===u.cluster],
+                ['region','within region',k=>D.unis[k].region===u.region],
+                ['nation','nationally',()=>true]];
+  let html='';
+  for(const [mname,key] of metrics){
+    for(const [,glab,filt] of groups){
+      const pool=Object.keys(D.unis).filter(filt).map(k=>D.unis[k][key][li]);
+      const p=percentile(u[key][li],pool);
+      const w=p==null?0:p;
+      html+=`<div class="pct-row"><div class="lab">${mname} · ${glab}</div>
+        <div class="pct-bar"><div class="pct-fill" style="width:${w}%"></div></div>
+        <div class="pct-val">${p==null?'–':Math.round(p)+'%'}</div></div>`;
+    }
+  }
+  document.getElementById('uniPercentiles').innerHTML=html;
+}
+
+/* ================= CHART → EXCEL DOWNLOADS (Trends tab) ================= */
+/* Every chart in #tab-trends gets a "⬇ Excel" button. On click it reads the
+   traces the chart is CURRENTLY showing (so selectors such as metric, split,
+   group, axes are respected) and writes them to an .xlsx file. */
+function xlsSlug(s){return (s||'chart').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(0,60);}
+function xlsChartTitle(el){
+  const card=el.closest('.card')||el.closest('.section');
+  const h=card&&card.querySelector('h3');
+  return h?h.textContent.trim():el.id;
+}
+/* Turn Plotly traces into an array-of-arrays table */
+function tracesToRows(traces, fallbackName){
+  traces=(traces||[]).filter(t=>t && t.visible!==false && t.hoverinfo!=='skip');
+  if(!traces.length) return [['No data displayed']];
+  const t0=traces[0], type=t0.type||'scatter';
+
+  // Heatmap: rows = y labels, columns = x labels
+  if(type==='heatmap'){
+    const rows=[['', ...t0.x]];
+    t0.y.forEach((yl,i)=>rows.push([yl, ...(t0.z[i]||[])]));
+    return rows;
+  }
+  // Choropleth map
+  if(type==='choropleth'){
+    const rows=[['Region','Value']];
+    t0.locations.forEach((l,i)=>rows.push([l,t0.z[i]]));
+    return rows;
+  }
+  // Pie / donut
+  if(type==='pie'){
+    const rows=[['Label','Value']];
+    t0.labels.forEach((l,i)=>rows.push([l,t0.values[i]]));
+    return rows;
+  }
+  // Sankey
+  if(type==='sankey'){
+    const lab=t0.node.label, rows=[['From','To','Value']];
+    t0.link.source.forEach((s,i)=>rows.push([lab[s],lab[t0.link.target[i]],t0.link.value[i]]));
+    return rows;
+  }
+  // Box plots: long format, one row per point, with provider name if attached
+  if(type==='box'){
+    const rows=[['Group','Provider','Value']];
+    for(const t of traces){
+      (t.y||[]).forEach((v,i)=>{
+        const real=(t.customdata&&t.customdata[i]!=null)?+t.customdata[i]:v;
+        rows.push([t.name||'', (t.text&&t.text[i])||'', real]);
+      });
+    }
+    return rows;
+  }
+  // Bar / scatter / line. Horizontal bars swap the axes.
+  const horiz=traces.every(t=>t.orientation==='h');
+  const catKey=horiz?'y':'x', valKey=horiz?'x':'y';
+  // Scatter with per-point text (e.g. funnel plot, bubbles): long format
+  const pointLevel=traces.some(t=>(t.mode||'').includes('markers') && Array.isArray(t.text) && t.text.length===(t[valKey]||[]).length && t.type!=='bar' && typeof (t.text[0]||'')==='string' && (t.text[0]||'').length>3 && !(t.mode||'').includes('lines'));
+  if(pointLevel){
+    const rows=[['Series','Label','X','Y']];
+    for(const t of traces){
+      (t.x||[]).forEach((xv,i)=>{
+        const lbl=String((t.text&&t.text[i])||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+        rows.push([t.name||'', lbl, xv, (t.y||[])[i]]);
+      });
+    }
+    return rows;
+  }
+  // Wide format: one row per category, one column per series
+  const cats=[];const seen=new Set();
+  for(const t of traces) for(const c of (t[catKey]||[])){const k=String(c);if(!seen.has(k)){seen.add(k);cats.push(c);}}
+  const header=[horiz?'Category':'Year / category', ...traces.map((t,i)=>t.name||(traces.length===1&&fallbackName?fallbackName:('Series '+(i+1))))];
+  const rows=[header];
+  for(const c of cats){
+    const r=[c];
+    for(const t of traces){
+      const idx=(t[catKey]||[]).findIndex(v=>String(v)===String(c));
+      r.push(idx>=0?(t[valKey]||[])[idx]:null);
+    }
+    rows.push(r);
+  }
+  return rows;
+}
+function downloadChartXlsx(el){
+  if(!el || !el.data){ alert('This chart has not been drawn yet — open its sub-tab first.'); return; }
+  const title=xlsChartTitle(el);
+  const rows=tracesToRows(el.data, title);
+  // Animated charts: add every frame (year) as a long table on a second sheet
+  const frames=(el._transitionData&&el._transitionData._frames)||[];
+  const meta=[['Chart',title],['Source','NCUB Collaboration Progress Monitor — HESA HE-BCI (CPM_master), HESA table-4e, GtR'],
+              ['Downloaded',new Date().toISOString().slice(0,16).replace('T',' ')],
+              ['Note','Values are exactly as plotted. Income in £000 constant 2024/25 prices unless the chart axis says otherwise.']];
+  const fname='cpm_'+xlsSlug(title);
+  if(window.XLSX){
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'data');
+    if(frames.length){
+      const long=[];let hdr=null;
+      for(const f of frames){
+        const r=tracesToRows(f.data, title);
+        if(!hdr){hdr=['Frame',...r[0]];long.push(hdr);}
+        r.slice(1).forEach(row=>long.push([f.name,...row]));
+      }
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(long), 'all_years');
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(meta), 'about');
+    XLSX.writeFile(wb, fname+'.xlsx');
+  } else {
+    // Offline fallback: CSV
+    const csv=rows.map(r=>r.map(v=>{const s=v==null?'':String(v);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}).join(',')).join('\n');
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob(['﻿'+csv],{type:'text/csv'}));
+    a.download=fname+'.csv'; document.body.appendChild(a); a.click(); a.remove();
+  }
+}
+function addTrendsXlsButtons(){
+  document.querySelectorAll('#tab-trends .chart').forEach(el=>{
+    if(!el.id || el.dataset.xls) return;
+    el.dataset.xls='1';
+    const btn=document.createElement('button');
+    btn.className='btn-xls'; btn.type='button';
+    btn.textContent='⬇ Excel'; btn.title='Download the data shown in this chart';
+    btn.addEventListener('click',()=>downloadChartXlsx(el));
+    // Put the button in the chart's own header when it has one to itself
+    const card=el.closest('.card')||el.closest('.section');
+    const head=card&&card.querySelector('.charthead');
+    const chartsInCard=card?card.querySelectorAll('.chart').length:0;
+    if(head && chartsInCard===1){ head.appendChild(btn); }
+    else { const row=document.createElement('div'); row.className='xls-row'; row.appendChild(btn); el.parentNode.insertBefore(row,el); }
+  });
+}
+addTrendsXlsButtons();
+
+/* boot */
+renderHome();
+
+/* ================= PDF INSTITUTION REPORT ================= */
+/* Builds a multi-page A4 analytical report using jsPDF. All analysis is
+   computed live from D — no pre-baked report data needed. */
+
+const PDF_COLOURS = {
+  purple: [62, 17, 81],   pink: [255, 0, 144],
+  blue: [0, 133, 202],    green: [0, 179, 136],
+  yellow: [254, 219, 0],  light: [170, 165, 187],
+  ink: [36, 16, 50],      muted: [109, 100, 120],
+  paper: [247, 247, 248]
+};
+
+function pdfFmtM(v) {
+  if (v == null || !isFinite(v)) return '–';
+  return '£' + (v >= 100000 ? (v/1000).toFixed(0) : (v/1000).toFixed(1)) + 'm';
+}
+function pdfFmtN(v) {
+  if (v == null || !isFinite(v)) return '–';
+  return Math.round(v).toLocaleString('en-GB');
+}
+function pdfCagr(a, b, yrs) {
+  if (!a || !b || a <= 0 || b <= 0) return null;
+  return (Math.pow(b/a, 1/yrs) - 1) * 100;
+}
+function pdfPercentile(val, pool) {
+  const valid = pool.filter(v => v != null && isFinite(v));
+  if (val == null || !valid.length) return null;
+  return valid.filter(v => v <= val).length / valid.length * 100;
+}
+
+/* Categorise a CAGR into a narrative band */
+function pdfCagrLabel(c) {
+  if (c == null) return 'insufficient data';
+  if (c >= 10) return 'significant growth';
+  if (c >= 3) return 'moderate growth';
+  if (c > -3) return 'broadly stable';
+  if (c > -10) return 'moderate decline';
+  return 'significant decline';
+}
+
+/* Pull a pool of values across providers matching a filter */
+function pdfPool(metricKey, atYear, filterFn) {
+  const yi = atYear == null ? D.years.length - 1 : atYear;
+  return Object.values(D.unis).filter(filterFn || (() => true))
+    .map(u => u[metricKey] && u[metricKey][yi])
+    .filter(v => v != null);
+}
+
+/* Build the analytical narrative for a provider */
+function pdfBuildAnalysis(u, ukprn) {
+  const yi = D.years.length - 1;
+  const yi5 = yi - 5;
+
+  // Trends — 5-year CAGR for each key metric
+  const trends = {
+    bci:      { label: 'Real BCI',                          cagr: pdfCagr(u.real[yi5], u.real[yi], 5),         group: 'bci' },
+    sme:      { label: 'BCI from SMEs',                     cagr: pdfCagr(u.real_sme[yi5], u.real_sme[yi], 5), group: 'bci' },
+    lc:       { label: 'BCI from large business',           cagr: pdfCagr(u.real_lc[yi5], u.real_lc[yi], 5),   group: 'bci' },
+    nsme:     { label: 'SME interactions',                  cagr: pdfCagr(u.n_sme[yi5], u.n_sme[yi], 5),       group: 'bci' },
+    nlc:      { label: 'Large business interactions',       cagr: pdfCagr(u.n_lc[yi5], u.n_lc[yi], 5),         group: 'bci' },
+    consult:  { label: 'Consultancy income',                cagr: pdfCagr(u.consult[yi5], u.consult[yi], 5),   group: 'bci' },
+    fe:       { label: 'Facilities & equipment income',     cagr: pdfCagr(u.fe[yi5], u.fe[yi], 5),             group: 'bci' },
+    contract: { label: 'Contract research income',          cagr: pdfCagr(u.contract[yi5], u.contract[yi], 5), group: 'bci' },
+    lic:      { label: 'Licensing income',                  cagr: pdfCagr(u.lic[yi5], u.lic[yi], 5),           group: 'ip' },
+    lic_sme:  { label: 'Licensing income — SMEs',           cagr: pdfCagr(u.lic_sme && u.lic_sme[yi5], u.lic_sme && u.lic_sme[yi], 5),  group: 'ip' },
+    lic_lc:   { label: 'Licensing income — large business', cagr: pdfCagr(u.lic_lc && u.lic_lc[yi5], u.lic_lc && u.lic_lc[yi], 5),    group: 'ip' },
+    lic_n:    { label: 'Licences granted',                  cagr: pdfCagr(u.lic_n[yi5], u.lic_n[yi], 5),       group: 'ip' },
+    spin:     { label: 'Active spinouts (3+ years)',        cagr: pdfCagr(u.spin[yi5], u.spin[yi], 5),         group: 'ip' },
+    ext:      { label: 'External investment in spinouts',   cagr: pdfCagr(u.ext[yi5], u.ext[yi], 5),           group: 'ip' },
+    pat:      { label: 'Patents granted',                   cagr: pdfCagr(u.pat[yi5], u.pat[yi], 5),           group: 'ip' }
+  };
+
+  // Percentiles vs cluster, region, national
+  const compareMetrics = [
+    ['real', 'Real BCI', '£m'],
+    ['real_sme', 'BCI from SMEs', '£m'],
+    ['real_lc', 'BCI from large business', '£m'],
+    ['n_sme', 'SME interactions', 'n'],
+    ['n_lc', 'Large business interactions', 'n'],
+    ['consult', 'Consultancy income', '£m'],
+    ['contract', 'Contract research income', '£m'],
+    ['lic', 'Licensing income', '£m'],
+    ['lic_n', 'Licences granted', 'n'],
+    ['spin', 'Spinouts (3+ years)', 'n']
+  ];
+  const benchmarks = compareMetrics.map(([key, name, unit]) => {
+    const val = u[key] && u[key][yi];
+    const clusterPool = pdfPool(key, yi, x => x.cluster === u.cluster);
+    const regionPool  = pdfPool(key, yi, x => x.region === u.region);
+    const allPool     = pdfPool(key, yi);
+    return {
+      key, name, unit, val,
+      clusterMedian: clusterPool.length ? clusterPool.sort((a,b)=>a-b)[Math.floor(clusterPool.length/2)] : null,
+      regionMedian:  regionPool.length ? regionPool.sort((a,b)=>a-b)[Math.floor(regionPool.length/2)] : null,
+      ukMedian:      allPool.length ? allPool.sort((a,b)=>a-b)[Math.floor(allPool.length/2)] : null,
+      pctCluster:    pdfPercentile(val, clusterPool),
+      pctRegion:     pdfPercentile(val, regionPool),
+      pctUk:         pdfPercentile(val, allPool)
+    };
+  });
+
+  // Strengths: metrics where provider is in top quartile of cluster (≥75%)
+  const strengths = benchmarks.filter(b => b.pctCluster != null && b.pctCluster >= 75 && b.val > 0)
+    .sort((a,b) => b.pctCluster - a.pctCluster);
+  // Plus any rapidly-growing metric
+  for (const [k, v] of Object.entries(trends)) {
+    if (v.cagr != null && v.cagr >= 10) {
+      strengths.push({ name: v.label, cagr: v.cagr, isTrend: true });
+    }
+  }
+
+  // Weaknesses: metrics in bottom quartile of cluster (<25%) OR in significant decline
+  const weaknesses = benchmarks.filter(b => b.pctCluster != null && b.pctCluster < 25)
+    .sort((a,b) => a.pctCluster - b.pctCluster);
+  for (const [k, v] of Object.entries(trends)) {
+    if (v.cagr != null && v.cagr <= -10) {
+      weaknesses.push({ name: v.label, cagr: v.cagr, isTrend: true });
+    }
+  }
+
+  return { trends, benchmarks, strengths, weaknesses };
+}
+
+/* Convert a Plotly chart (by element ID) to a PNG data URL for embedding */
+async function pdfChartToImage(elId, width = 800, height = 400) {
+  const el = document.getElementById(elId);
+  if (!el || !el.data) return null;
+  try {
+    return await Plotly.toImage(el, { format: 'png', width, height, scale: 2 });
+  } catch (e) { console.warn('chart export failed', elId, e); return null; }
+}
+
+/* Main entry — produce the PDF for the current institution */
+async function pdfGenerateReport() {
+  if (!currentUni) { alert('Please select a university first.'); return; }
+  const u = D.unis[currentUni];
+  const btn = document.getElementById('btnReport');
+  const note = document.getElementById('reportNote');
+  btn.disabled = true;
+  btn.textContent = '⏳ Generating…';
+  note.style.display = 'block';
+  note.textContent = 'Rendering charts and building report…';
+
+  try {
+    // Ensure the BCI sub-tab has rendered (we'll snapshot its charts)
+    const wasActive = document.querySelector('#uniSubnav button.active')?.dataset.sub;
+    if (wasActive !== 'bci') {
+      document.querySelector('#uniSubnav button[data-sub="bci"]').click();
+      await new Promise(r => setTimeout(r, 800));   // allow Plotly to draw
+    }
+
+    const A = pdfBuildAnalysis(u, currentUni);
+    const yrs = D.years;
+    const yi = yrs.length - 1;
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const W = 210, H = 297;
+    const M = 15;                 // outer margin
+    let cursor;
+
+    // ─── helpers ────────────────────────────────────────────────────
+    // ─── Unicode safety net ──────────────────────────────────────────
+    // jsPDF's default PDF fonts use WinAnsi encoding; characters outside
+    // it render as garbage (e.g. ●, ▲, ≥, →, emoji). Map to safe ASCII.
+    const pdfSafe = s => {
+      if (s == null) return '';
+      return String(s)
+        .replace(/[•●∙]/g, '-')
+        .replace(/▲/g, '^')
+        .replace(/▼/g, 'v')
+        .replace(/[–—]/g, '-')
+        .replace(/…/g, '...')
+        .replace(/·/g, '|')
+        .replace(/≥/g, '>=')
+        .replace(/≤/g, '<=')
+        .replace(/→/g, '->')
+        .replace(/←/g, '<-')
+        .replace(/[\u2500-\u257F]/g, '-')
+        .replace(/[\u{1F000}-\u{1FFFF}]/gu, '')
+        .replace(/[\u{2300}-\u{27BF}]/gu, '')
+        // keep £ (0xA3), basic ASCII; strip everything else
+        .replace(/[^\x20-\x7E\xA3]/g, '');
+    };
+
+    const setColor = (rgb, fn = 'setTextColor') => doc[fn](rgb[0], rgb[1], rgb[2]);
+    const text = (s, x, y, opts = {}) => {
+      const size = opts.size || 10;
+      doc.setFontSize(size);
+      if (opts.bold) doc.setFont('helvetica', 'bold');
+      else if (opts.italic) doc.setFont('helvetica', 'italic');
+      else doc.setFont('helvetica', 'normal');
+      if (opts.color) setColor(opts.color);
+      const lines = doc.splitTextToSize(pdfSafe(s), opts.width || W - M*2);
+      doc.text(lines, x, y);
+      return y + lines.length * size * 0.42;
+    };
+    // Wrap raw doc.text so direct calls get sanitised too
+    const rawText = doc.text.bind(doc);
+    doc.text = (text, x, y, opts) => {
+      if (Array.isArray(text)) return rawText(text.map(pdfSafe), x, y, opts);
+      return rawText(pdfSafe(text), x, y, opts);
+    };
+    const rect = (x, y, w, h, rgb, fill = 'F') => {
+      setColor(rgb, 'setFillColor'); doc.rect(x, y, w, h, fill);
+    };
+    const line = (x1, y1, x2, y2, rgb = PDF_COLOURS.light) => {
+      setColor(rgb, 'setDrawColor'); doc.setLineWidth(0.3); doc.line(x1, y1, x2, y2);
+    };
+    const newPage = () => { doc.addPage(); cursor = M + 8; };
+    const footer = (pageNum) => {
+      setColor(PDF_COLOURS.muted);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`NCUB Collaboration Progress Monitor · ${u.name}`, M, H - 8);
+      doc.text(`Page ${pageNum}`, W - M, H - 8, { align: 'right' });
+    };
+
+    // ─── PAGE 1 — COVER ────────────────────────────────────────────
+    rect(0, 0, W, 92, PDF_COLOURS.purple);
+    rect(0, 92, W, 4, PDF_COLOURS.pink);
+    setColor([255, 255, 255]);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+    doc.text('NCUB COLLABORATION PROGRESS MONITOR', M, 28);
+    doc.setFontSize(10); doc.setFont('helvetica', 'normal');
+    doc.text('Institutional report', M, 35);
+    doc.setFontSize(26); doc.setFont('helvetica', 'bold');
+    const titleLines = doc.splitTextToSize(u.name, W - M*2);
+    doc.text(titleLines, M, 56);
+    doc.setFontSize(12); doc.setFont('helvetica', 'normal');
+    const subtitle = `${u.region}  ·  ${u.cluster}  ·  TRAC: ${u.trac ? u.trac.label : 'N/A'}`;
+    doc.text(subtitle, M, 56 + titleLines.length * 11 + 4);
+    setColor([220, 200, 235]);
+    doc.setFontSize(9.5);
+    const today = new Date().toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' });
+    doc.text(`Generated ${today} · Data: HE-BCI panel ${yrs[0]}–${yrs[yi]}, constant prices`, M, 84);
+
+    // Executive summary box
+    cursor = 110;
+    setColor(PDF_COLOURS.purple);
+    doc.setFontSize(14); doc.setFont('helvetica', 'bold');
+    cursor = text('Executive summary', M, cursor, { color: PDF_COLOURS.purple, size: 14, bold: true });
+    cursor += 4;
+
+    const bciNow = u.real[yi], bciPrev = u.real[yi-1], bciFiveAgo = u.real[yi-5];
+    const yoyPct = bciNow && bciPrev ? ((bciNow / bciPrev - 1) * 100) : null;
+    const cagrAll = pdfCagr(bciFiveAgo, bciNow, 5);
+    const benchmarks = A.benchmarks;
+    const bciBench = benchmarks.find(b => b.key === 'real');
+
+    const summary = [];
+    summary.push(`Business collaboration income in ${yrs[yi]} stood at ${pdfFmtM(bciNow)} in real terms` +
+      (yoyPct != null ? `, ${yoyPct > 0 ? 'up' : 'down'} ${Math.abs(yoyPct).toFixed(1)}% year-on-year` : '') + '.');
+    if (cagrAll != null) {
+      summary.push(`Over the past five years the trajectory has been ${pdfCagrLabel(cagrAll)} (${cagrAll > 0 ? '+' : ''}${cagrAll.toFixed(1)}% per year CAGR).`);
+    }
+    if (bciBench && bciBench.pctCluster != null) {
+      summary.push(`The provider sits in the ${Math.round(bciBench.pctCluster)}th percentile of its cluster, ${Math.round(bciBench.pctRegion)}th of its region and ${Math.round(bciBench.pctUk)}th nationally.`);
+    }
+    summary.push(`This year ${pdfFmtN(u.n_sme[yi] + u.n_lc[yi])} business interactions were recorded — ${pdfFmtN(u.n_sme[yi])} with SMEs and ${pdfFmtN(u.n_lc[yi])} with large businesses.`);
+    if (u.spin[yi]) summary.push(`${pdfFmtN(u.spin[yi])} spinouts surviving three or more years are active.`);
+
+    doc.setFontSize(10); doc.setFont('helvetica', 'normal');
+    for (const s of summary) {
+      // Draw a solid pink square as the bullet marker — Unicode bullet
+      // characters don't survive jsPDF's WinAnsi encoding
+      setColor(PDF_COLOURS.pink, 'setFillColor');
+      doc.rect(M, cursor - 2.4, 2, 2, 'F');
+      cursor = text(s, M + 6, cursor, { color: PDF_COLOURS.ink, size: 10.5, width: W - M*2 - 6 });
+      cursor += 1.5;
+    }
+
+    // KPI strip
+    cursor = Math.max(cursor + 6, 195);
+    const kpis = [
+      { v: pdfFmtM(bciNow), l: 'Real BCI', col: PDF_COLOURS.pink },
+      { v: pdfFmtN(u.n_sme[yi] + u.n_lc[yi]), l: 'Interactions', col: PDF_COLOURS.blue },
+      { v: pdfFmtM(u.lic[yi]), l: 'Licensing income', col: PDF_COLOURS.yellow },
+      { v: pdfFmtN(u.spin[yi]), l: 'Active spinouts', col: PDF_COLOURS.green }
+    ];
+    const kpiW = (W - M*2 - 6) / 4;
+    kpis.forEach((k, i) => {
+      const x = M + i * (kpiW + 2);
+      rect(x, cursor, kpiW, 22, PDF_COLOURS.paper);
+      rect(x, cursor, kpiW, 1.5, k.col);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
+      setColor(PDF_COLOURS.purple);
+      doc.text(k.v, x + 3, cursor + 9);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+      setColor(PDF_COLOURS.muted);
+      doc.text(k.l, x + 3, cursor + 14);
+      doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5);
+      doc.text(`${yrs[yi]}`, x + 3, cursor + 18);
+    });
+
+    footer(1);
+
+    // ─── PAGE 2 — TRENDS ───────────────────────────────────────────
+    newPage();
+    cursor = text('Trends', M, cursor, { color: PDF_COLOURS.purple, size: 20, bold: true });
+    cursor += 1;
+    setColor(PDF_COLOURS.pink); doc.setLineWidth(1.5);
+    doc.line(M, cursor, M + 18, cursor);
+    cursor += 6;
+
+    const trendIntro = `Five-year compound annual growth rates ${yrs[yi-5]} → ${yrs[yi]}, in constant ${yrs[yi]} prices.`;
+    cursor = text(trendIntro, M, cursor, { color: PDF_COLOURS.muted, size: 10, italic: true });
+    cursor += 5;
+
+    // Trends narrative paragraphs
+    const t = A.trends;
+    const narr = [];
+    if (t.bci.cagr != null) {
+      narr.push(`Overall business collaboration income has shown ${pdfCagrLabel(t.bci.cagr)} (${t.bci.cagr > 0 ? '+' : ''}${t.bci.cagr.toFixed(1)}% per year). ` +
+        ((t.sme.cagr != null && t.lc.cagr != null) ?
+          `The SME stream (${t.sme.cagr > 0 ? '+' : ''}${t.sme.cagr.toFixed(1)}%/yr) ${t.sme.cagr > t.lc.cagr ? 'has outpaced' : 'has lagged'} the large-business stream (${t.lc.cagr > 0 ? '+' : ''}${t.lc.cagr.toFixed(1)}%/yr).` : ''));
+    }
+    if (t.contract.cagr != null) {
+      narr.push(`Contract research, the largest income stream nationally, grew at ${t.contract.cagr > 0 ? '+' : ''}${t.contract.cagr.toFixed(1)}% per year here. ` +
+        `Consultancy income moved at ${t.consult.cagr != null ? (t.consult.cagr > 0 ? '+' : '') + t.consult.cagr.toFixed(1) + '%' : 'insufficient data'} and facilities & equipment at ${t.fe.cagr != null ? (t.fe.cagr > 0 ? '+' : '') + t.fe.cagr.toFixed(1) + '%' : 'insufficient data'}.`);
+    }
+    if (t.lic.cagr != null) {
+      narr.push(`Licensing income — typically more volatile — registered ${pdfCagrLabel(t.lic.cagr)} at ${t.lic.cagr > 0 ? '+' : ''}${t.lic.cagr.toFixed(1)}% per year.`);
+    }
+    if (t.nsme.cagr != null && t.nlc.cagr != null) {
+      narr.push(`Engagement volumes shifted: SME interactions ${pdfCagrLabel(t.nsme.cagr)} (${t.nsme.cagr > 0 ? '+' : ''}${t.nsme.cagr.toFixed(1)}%/yr), large-business interactions ${pdfCagrLabel(t.nlc.cagr)} (${t.nlc.cagr > 0 ? '+' : ''}${t.nlc.cagr.toFixed(1)}%/yr).`);
+    }
+    for (const p of narr) {
+      cursor = text(p, M, cursor, { color: PDF_COLOURS.ink, size: 10.5 });
+      cursor += 3;
+    }
+
+    // Trends table — BCI dimension only (licensing & spinouts get their own page)
+    cursor += 2;
+    const fieldMap = { bci: 'real', sme: 'real_sme', lc: 'real_lc', nsme: 'n_sme', nlc: 'n_lc',
+      consult: 'consult', fe: 'fe', contract: 'contract', lic: 'lic',
+      lic_sme: 'lic_sme', lic_lc: 'lic_lc', lic_n: 'lic_n', spin: 'spin', ext: 'ext', pat: 'pat' };
+    const countKeys = new Set(['nsme','nlc','lic_n','spin','pat']);
+    const trendRow = (key, x) => {
+      const m = fieldMap[key];
+      const isCount = countKeys.has(key);
+      const fmt = isCount ? pdfFmtN : pdfFmtM;
+      const a = u[m] && u[m][yi-5], b = u[m] && u[m][yi];
+      return [pdfSafe(x.label), fmt(a), fmt(b),
+        (x.cagr > 0 ? '+' : '') + x.cagr.toFixed(1) + '%', pdfSafe(pdfCagrLabel(x.cagr))];
+    };
+    doc.autoTable({
+      startY: cursor,
+      head: [['Metric', `${yrs[yi-5]}`, `${yrs[yi]}`, 'CAGR', 'Trajectory']],
+      body: Object.entries(t)
+        .filter(([k,x]) => x.cagr != null && x.group === 'bci')
+        .map(([k,x]) => trendRow(k,x)),
+      theme: 'plain',
+      styles: { fontSize: 9, cellPadding: 2 },
+      headStyles: { fillColor: PDF_COLOURS.purple, textColor: [255,255,255], fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: PDF_COLOURS.paper },
+      didParseCell: data => {
+        if (data.section === 'body' && data.column.index === 4) {
+          const c = String(data.cell.raw);
+          if (c.includes('significant growth')) data.cell.styles.textColor = PDF_COLOURS.green;
+          else if (c.includes('moderate growth')) data.cell.styles.textColor = [50, 130, 90];
+          else if (c.includes('decline')) data.cell.styles.textColor = PDF_COLOURS.pink;
+        }
+      }
+    });
+    cursor = doc.lastAutoTable.finalY + 6;
+
+    // Embed real BCI chart
+    const bciImg = await pdfChartToImage('chUniBciTotal', 800, 360);
+    if (bciImg && cursor < H - 80) {
+      cursor = text('Real BCI vs benchmarks', M, cursor, { color: PDF_COLOURS.purple, size: 12, bold: true });
+      cursor += 2;
+      doc.addImage(bciImg, 'PNG', M, cursor, W - M*2, (W - M*2) * 0.45);
+      cursor += (W - M*2) * 0.45 + 4;
+    }
+
+    footer(2);
+
+    // ─── PAGE 3 — LICENSING & SPINOUTS GROWTH ──────────────────────
+    newPage();
+    cursor = text('Licensing & spinouts: 5-year growth', M, cursor, { color: PDF_COLOURS.purple, size: 20, bold: true });
+    cursor += 1;
+    setColor(PDF_COLOURS.pink); doc.setLineWidth(1.5);
+    doc.line(M, cursor, M + 38, cursor);
+    cursor += 6;
+    cursor = text(`Five-year trajectories for commercialisation indicators ${yrs[yi-5]} → ${yrs[yi]}, in constant ${yrs[yi]} prices.`,
+      M, cursor, { color: PDF_COLOURS.muted, size: 10, italic: true });
+    cursor += 5;
+
+    // Narrative for IP/spinouts
+    const ipNarr = [];
+    if (t.lic.cagr != null) {
+      ipNarr.push(`Licensing income overall registered ${pdfCagrLabel(t.lic.cagr)} at ${t.lic.cagr > 0 ? '+' : ''}${t.lic.cagr.toFixed(1)}% per year. ` +
+        ((t.lic_sme.cagr != null && t.lic_lc.cagr != null) ?
+          `Within that, the SME licensing stream ran at ${t.lic_sme.cagr > 0 ? '+' : ''}${t.lic_sme.cagr.toFixed(1)}%/yr and the large-business stream at ${t.lic_lc.cagr > 0 ? '+' : ''}${t.lic_lc.cagr.toFixed(1)}%/yr.` : ''));
+    }
+    if (t.lic_n.cagr != null) {
+      ipNarr.push(`Licence volumes — independent of value — grew at ${t.lic_n.cagr > 0 ? '+' : ''}${t.lic_n.cagr.toFixed(1)}% per year (${pdfCagrLabel(t.lic_n.cagr)}).`);
+    }
+    if (t.spin.cagr != null) {
+      ipNarr.push(`The active spinout portfolio — those surviving three or more years — is in ${pdfCagrLabel(t.spin.cagr)} at ${t.spin.cagr > 0 ? '+' : ''}${t.spin.cagr.toFixed(1)}% per year. ` +
+        ((t.ext.cagr != null) ? `External investment into those spinouts moved at ${t.ext.cagr > 0 ? '+' : ''}${t.ext.cagr.toFixed(1)}%/yr (${pdfCagrLabel(t.ext.cagr)}).` : ''));
+    } else {
+      ipNarr.push('Spinout data shows no five-year base or current value sufficient to compute a growth rate.');
+    }
+    if (t.pat.cagr != null) {
+      ipNarr.push(`Patents granted, a downstream indicator of the IP pipeline, moved at ${t.pat.cagr > 0 ? '+' : ''}${t.pat.cagr.toFixed(1)}% per year.`);
+    }
+    for (const p of ipNarr) {
+      cursor = text(p, M, cursor, { color: PDF_COLOURS.ink, size: 10.5 });
+      cursor += 3;
+    }
+
+    // IP trends table
+    cursor += 2;
+    doc.autoTable({
+      startY: cursor,
+      head: [['Metric', `${yrs[yi-5]}`, `${yrs[yi]}`, 'CAGR', 'Trajectory']],
+      body: Object.entries(t)
+        .filter(([k,x]) => x.cagr != null && x.group === 'ip')
+        .map(([k,x]) => trendRow(k,x)),
+      theme: 'plain',
+      styles: { fontSize: 9, cellPadding: 2 },
+      headStyles: { fillColor: PDF_COLOURS.purple, textColor: [255,255,255], fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: PDF_COLOURS.paper },
+      didParseCell: data => {
+        if (data.section === 'body' && data.column.index === 4) {
+          const c = String(data.cell.raw);
+          if (c.includes('significant growth')) data.cell.styles.textColor = PDF_COLOURS.green;
+          else if (c.includes('moderate growth')) data.cell.styles.textColor = [50, 130, 90];
+          else if (c.includes('decline')) data.cell.styles.textColor = PDF_COLOURS.pink;
+        }
+      }
+    });
+    cursor = doc.lastAutoTable.finalY + 6;
+
+    // Switch to IP sub-tab so its charts have rendered, then snapshot
+    document.querySelector('#uniSubnav button[data-sub="ip"]').click();
+    await new Promise(r => setTimeout(r, 800));
+    const licImg = await pdfChartToImage('chUniLicTrend', 800, 320);
+    if (licImg && cursor < H - 70) {
+      cursor = text('Licensing income & licence volume', M, cursor, { color: PDF_COLOURS.purple, size: 12, bold: true });
+      cursor += 2;
+      doc.addImage(licImg, 'PNG', M, cursor, W - M*2, (W - M*2) * 0.4);
+      cursor += (W - M*2) * 0.4 + 4;
+    }
+    const spinImg = await pdfChartToImage('chUniSpin', 800, 320);
+    if (spinImg && cursor < H - 70) {
+      cursor = text('Spinout activity & external investment', M, cursor, { color: PDF_COLOURS.purple, size: 12, bold: true });
+      cursor += 2;
+      doc.addImage(spinImg, 'PNG', M, cursor, W - M*2, (W - M*2) * 0.4);
+    }
+
+    footer(3);
+
+    // ─── PAGE 4 — STRENGTHS & WEAKNESSES ───────────────────────────
+    newPage();
+    cursor = text('Strengths & weaknesses', M, cursor, { color: PDF_COLOURS.purple, size: 20, bold: true });
+    cursor += 1;
+    setColor(PDF_COLOURS.pink); doc.setLineWidth(1.5);
+    doc.line(M, cursor, M + 32, cursor);
+    cursor += 6;
+    cursor = text(`Strengths: top-quartile metrics within the ${u.cluster} cluster, plus measures growing significantly. Weaknesses: bottom-quartile metrics or those in significant decline.`,
+      M, cursor, { color: PDF_COLOURS.muted, size: 9.5, italic: true });
+    cursor += 6;
+
+    // Strengths block
+    rect(M, cursor, W - M*2, 8, PDF_COLOURS.green);
+    setColor([255, 255, 255]); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+    doc.text('STRENGTHS', M + 3, cursor + 5.7);
+    cursor += 11;
+    if (!A.strengths.length) {
+      cursor = text('No metrics in the top quartile of cluster peers, and no measures showing significant growth over the past five years.',
+        M, cursor, { color: PDF_COLOURS.ink, size: 10, italic: true });
+    } else {
+      for (const s of A.strengths.slice(0, 8)) {
+        // Green up-triangle drawn with vector primitives (Unicode arrows
+        // don't render reliably in jsPDF's default font)
+        setColor(PDF_COLOURS.green, 'setFillColor');
+        doc.triangle(M, cursor - 1, M + 3.2, cursor - 1, M + 1.6, cursor - 3.6, 'F');
+        const descr = s.isTrend
+          ? `${s.name} is in significant growth (+${s.cagr.toFixed(1)}% per year over the past five years)`
+          : `${s.name}: ${s.unit === '£m' ? pdfFmtM(s.val) : pdfFmtN(s.val)} — ${Math.round(s.pctCluster)}th percentile in cluster, ${Math.round(s.pctRegion)}th in region, ${Math.round(s.pctUk)}th nationally`;
+        cursor = text(descr, M + 6, cursor, { color: PDF_COLOURS.ink, size: 10, width: W - M*2 - 6 });
+        cursor += 1.5;
+      }
+    }
+    cursor += 4;
+
+    // Weaknesses block
+    rect(M, cursor, W - M*2, 8, PDF_COLOURS.pink);
+    setColor([255, 255, 255]); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+    doc.text('AREAS TO STRENGTHEN', M + 3, cursor + 5.7);
+    cursor += 11;
+    if (!A.weaknesses.length) {
+      cursor = text('No metrics in the bottom quartile of cluster peers and none in significant decline.',
+        M, cursor, { color: PDF_COLOURS.ink, size: 10, italic: true });
+    } else {
+      for (const w of A.weaknesses.slice(0, 8)) {
+        // Pink down-triangle
+        setColor(PDF_COLOURS.pink, 'setFillColor');
+        doc.triangle(M, cursor - 3.6, M + 3.2, cursor - 3.6, M + 1.6, cursor - 1, 'F');
+        const descr = w.isTrend
+          ? `${w.name} is in significant decline (${w.cagr.toFixed(1)}% per year over the past five years)`
+          : `${w.name}: ${w.unit === '£m' ? pdfFmtM(w.val) : pdfFmtN(w.val)} — ${Math.round(w.pctCluster)}th percentile in cluster, ${Math.round(w.pctRegion)}th in region, ${Math.round(w.pctUk)}th nationally`;
+        cursor = text(descr, M + 6, cursor, { color: PDF_COLOURS.ink, size: 10, width: W - M*2 - 6 });
+        cursor += 1.5;
+      }
+    }
+    cursor += 6;
+
+    cursor = text('Reading note: percentiles compare this provider against the live HE-BCI panel for the latest year, separately within its cluster, its region and the UK as a whole. A 75th-percentile reading means three quarters of peers had lower values; a 25th-percentile reading means only one quarter did.',
+      M, cursor, { color: PDF_COLOURS.muted, size: 8.5, italic: true });
+
+    footer(4);
+
+    // ─── PAGE 5 — COMPARISONS ──────────────────────────────────────
+    newPage();
+    cursor = text('Comparisons', M, cursor, { color: PDF_COLOURS.purple, size: 20, bold: true });
+    cursor += 1;
+    setColor(PDF_COLOURS.pink); doc.setLineWidth(1.5);
+    doc.line(M, cursor, M + 22, cursor);
+    cursor += 6;
+    cursor = text(`This institution against the median of its ${u.cluster.toLowerCase()} cluster, its ${u.region} regional median, and the UK national median, for ${yrs[yi]} in constant prices.`,
+      M, cursor, { color: PDF_COLOURS.muted, size: 9.5, italic: true });
+    cursor += 4;
+
+    const fmtVal = (v, unit) => v == null ? '–' : (unit === '£m' ? pdfFmtM(v) : pdfFmtN(v));
+    doc.autoTable({
+      startY: cursor,
+      head: [['Metric', 'This provider', 'Cluster median', 'Region median', 'UK median', 'Cluster %ile']],
+      body: A.benchmarks.map(b => [
+        pdfSafe(b.name), fmtVal(b.val, b.unit), fmtVal(b.clusterMedian, b.unit),
+        fmtVal(b.regionMedian, b.unit), fmtVal(b.ukMedian, b.unit),
+        b.pctCluster == null ? '-' : Math.round(b.pctCluster) + '%'
+      ]),
+      theme: 'plain',
+      styles: { fontSize: 9, cellPadding: 2.2 },
+      headStyles: { fillColor: PDF_COLOURS.purple, textColor: [255,255,255], fontStyle: 'bold', halign: 'center' },
+      columnStyles: { 0: { fontStyle: 'bold' }, 1: { halign: 'right' }, 2: { halign: 'right' },
+                     3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'center' } },
+      alternateRowStyles: { fillColor: PDF_COLOURS.paper },
+      didParseCell: data => {
+        if (data.section === 'body' && data.column.index === 5) {
+          const v = parseInt(data.cell.raw);
+          if (!isNaN(v)) {
+            if (v >= 75) data.cell.styles.textColor = PDF_COLOURS.green;
+            else if (v < 25) data.cell.styles.textColor = PDF_COLOURS.pink;
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+      }
+    });
+    cursor = doc.lastAutoTable.finalY + 8;
+
+    // Income mix chart
+    const mixImg = await pdfChartToImage('chUniMix', 800, 360);
+    if (mixImg && cursor < H - 70) {
+      cursor = text('Income streams', M, cursor, { color: PDF_COLOURS.purple, size: 12, bold: true });
+      cursor += 2;
+      doc.addImage(mixImg, 'PNG', M, cursor, (W - M*2 - 4) / 2, ((W - M*2 - 4) / 2) * 0.5);
+    }
+    const smeImg = await pdfChartToImage('chUniSme', 800, 360);
+    if (smeImg && cursor < H - 70) {
+      const colW = (W - M*2 - 4) / 2;
+      doc.addImage(smeImg, 'PNG', M + colW + 4, cursor, colW, colW * 0.5);
+      cursor += colW * 0.5 + 6;
+    }
+
+    // Methodology
+    cursor = Math.max(cursor, H - 40);
+    cursor = text('Methodology', M, cursor, { color: PDF_COLOURS.purple, size: 11, bold: true });
+    cursor = text('Source: HESA HE-BCI panel, 231 UK providers, 2014/15–2024/25. All income measures deflated to constant 2024/25 prices using CPI. Five-year CAGR computed as (value_t / value_{t-5})^(1/5) – 1. Percentile rank: share of pool with values at or below this provider. Cluster definitions follow Research England.',
+      M, cursor + 1, { color: PDF_COLOURS.muted, size: 8, width: W - M*2 });
+
+    footer(5);
+
+    // Save
+    const fname = u.name.replace(/[^\w]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase() + '_cpm_report.pdf';
+    doc.save(fname);
+    note.textContent = `Report saved as ${fname}`;
+    note.style.color = 'var(--green)';
+  } catch (e) {
+    console.error(e);
+    note.textContent = 'Report generation failed: ' + e.message;
+    note.style.color = 'var(--pink)';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '📄 Generate PDF report';
+    setTimeout(() => { note.style.display = 'none'; }, 8000);
+  }
+}
+
+// wire the button
+document.addEventListener('click', e => {
+  if (e.target.closest('#btnReport')) pdfGenerateReport();
+});
+
+/* ================= CASE STUDIES ================= */
+const SECTOR_CLASS = {'life sciences':'s-life','engineering':'s-eng','digital & ICT':'s-dig',
+  'energy & cleantech':'s-energy','creative & cultural':'s-creative','agri-food & environment':'s-agri',
+  'finance & professional services':'s-fin'};
+const SECTOR_COL = {'life sciences':C.pink,'engineering':C.blue,'digital & ICT':C.green,
+  'energy & cleantech':'#88c14b','creative & cultural':'#d05fb3','agri-food & environment':'#c08f4a',
+  'finance & professional services':C.pm,'Other / Unclassified':C.pl,
+  'construction & infrastructure':'#c08f4a','retail & consumer':C.yellow,'space & defence':'#1f3a5f'};
+
+function topCounts(items,key,limit){
+  const m={};for(const it of items){const v=it[key];if(!v)continue;m[v]=(m[v]||0)+1;}
+  return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,limit).map(([k,v])=>({name:k,count:v}));
+}
+
+function renderCases(){
+  const items=D.cases||[];
+  if(!items.length){
+    document.getElementById('casesEnrich').style.display='block';
+    document.getElementById('caseGallery').innerHTML='<p class="note" style="grid-column:1/-1;text-align:center;padding:40px">No case studies loaded. Run <code>python fetch_case_studies.py</code> to populate.</p>';
+    return;
+  }
+  if(items.length < 25) document.getElementById('casesEnrich').style.display='block';
+
+  // Filter state — kept here so chart clicks AND dropdowns share it
+  const state={q:'',sector:'',uni:'',theme:'',region:''};
+  // Cache last-known full-population versions of the dropdowns so users can
+  // jump *back* to a value that is filtered out by their current selection
+  let allSectors=[], allUnis=[];
+
+  // Build a label lookup so chip/dropdown/chart can switch between display
+  // name (HESA he_provider) and the original case.university string.
+  // Each case has c.uni_names (a list of matched HESA names). We "expand"
+  // multi-uni cases into a list of (case, displayName) pairs for any chart
+  // that aggregates by university — that way Loughborough+Cambridge counts
+  // toward both, not just whichever appeared first.
+  const expandByUni=arr=>{
+    const out=[];
+    for(const c of arr){
+      const ns=c.uni_names && c.uni_names.length ? c.uni_names : (c.university?[c.university]:[]);
+      if(!ns.length){out.push({c,uniName:null});continue;}
+      for(const n of ns) out.push({c,uniName:n});
+    }
+    return out;
+  };
+
+  const applyFilters=()=>items.filter(c=>{
+    if(state.sector && c.sector!==state.sector) return false;
+    if(state.region && !(c.regions||[]).includes(state.region)) return false;
+    if(state.uni){
+      // exact ukprn lookup first; falls back to display name match
+      const ukprns=c.ukprns||[];
+      const names=c.uni_names||[c.university].filter(Boolean);
+      if(!(ukprns.includes(state.uni) || names.includes(state.uni))) return false;
+    }
+    if(state.theme && !(c.topics||[]).includes(state.theme)) return false;
+    if(state.q){
+      const blob=((c.title||'')+' '+(c.university||'')+' '+(c.uni_names||[]).join(' ')+' '+(c.partner||'')+' '+(c.summary||'')).toLowerCase();
+      if(!blob.includes(state.q)) return false;
+    }
+    return true;
+  });
+
+
+  // ── geography of collaboration storytelling ──
+  const REGIONS_ORDERED=['Scotland','Northern Ireland','Wales','London','South East','South West','East of England','East Midlands','West Midlands','North West','North East','Yorkshire and The Humber'];
+  const REGION_GROUP_COL={'Scotland':C.pm,'Northern Ireland':C.pm,'Wales':C.pm,
+    'London':C.pink,'South East':C.pink,'South West':C.pink,
+    'East of England':C.blue,'East Midlands':C.blue,'West Midlands':C.blue,
+    'North West':C.green,'North East':C.green,'Yorkshire and The Humber':C.green};
+
+  const drawGeo=(subset)=>{
+  // Each case can have multiple regions (multi-uni stories). Count distinct
+  // cases per region (so a Cambridge+UCL story counts once for East of England
+  // and once for London, but only once per region).
+  const regCnt={};
+  for(const c of subset){
+    for(const r of (c.regions||[])) regCnt[r]=(regCnt[r]||0)+1;
+  }
+  const total=subset.length;
+  const placed=Object.values(regCnt).reduce((a,b)=>a+b,0);
+  const top=Object.entries(regCnt).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  const noRegion=subset.filter(c=>!c.regions||!c.regions.length).length;
+
+  // ── choropleth ──
+  const locs=[],vals=[],texts=[];
+  for(const r of REGIONS_ORDERED){
+    const v=regCnt[r]||0;
+    locs.push(r); vals.push(v);
+    const pct=total?(v/total*100).toFixed(0):0;
+    texts.push(`<b>${r}</b><br>${v} case stud${v===1?'y':'ies'} (${pct}% of selection)<br><i>Click to filter</i>`);
+  }
+  Plotly.newPlot('chCasesGeoMap',[{
+    type:'choropleth',geojson:D.geo,locations:locs,z:vals,
+    featureidkey:'properties.region',text:texts,hovertemplate:'%{text}<extra></extra>',
+    colorscale:[[0,'#f3eef7'],[0.4,'#aaa5bb'],[0.75,'#60537f'],[1,'#3e1151']],
+    marker:{line:{color:'#fff',width:1.2}},
+    colorbar:{thickness:12,len:.7,tickfont:{size:11},title:{text:'cases',font:{size:11}}}
+  }],L({geo:{scope:'europe',fitbounds:'locations',projection:{type:'mercator'},
+        bgcolor:'rgba(0,0,0,0)',showframe:false,showcoastlines:false,showland:false},
+    margin:{l:0,r:0,t:6,b:0},height:440,dragmode:false}),CFG);
+  const mapEl=document.getElementById('chCasesGeoMap');
+  if(mapEl && mapEl.on){
+    mapEl.on('plotly_click',ev=>{
+      if(ev.points && ev.points[0]){
+        const r=ev.points[0].location;
+        state.region=(state.region===r?'':r);
+        draw(true);
+      }
+    });
+  }
+
+  // ── narrative ──
+  const narrative=document.getElementById('casesGeoNarrative');
+  if(!total){narrative.innerHTML='<i>No case studies in the current selection.</i>';return;}
+  let html='';
+  if(top.length){
+    const dominant=top[0];
+    const pct=Math.round(dominant[1]/total*100);
+    html+=`<b>${dominant[0]}</b> leads the selection with ${dominant[1]} case stud${dominant[1]===1?'y':'ies'} (${pct}% of the ${total}). `;
+  }
+  if(top.length>=3){
+    html+=`The top three regions — <b>${top[0][0]}</b>, ${top[1][0]} and ${top[2][0]} — account for ${Math.round((top[0][1]+top[1][1]+top[2][1])/total*100)}% of stories. `;
+  }
+  // North-south split (excluding devolved nations and the geographic centre)
+  const north=['North East','North West','Yorkshire and The Humber'].reduce((a,r)=>a+(regCnt[r]||0),0);
+  const south=['London','South East','South West','East of England'].reduce((a,r)=>a+(regCnt[r]||0),0);
+  const midlands=['East Midlands','West Midlands'].reduce((a,r)=>a+(regCnt[r]||0),0);
+  const devolved=['Scotland','Wales','Northern Ireland'].reduce((a,r)=>a+(regCnt[r]||0),0);
+  if(south && (north||midlands||devolved)){
+    html+=`Southern England accounts for ${Math.round(south/total*100)}% of the cases; northern England ${Math.round(north/total*100)}%, the Midlands ${Math.round(midlands/total*100)}%, devolved nations ${Math.round(devolved/total*100)}%. `;
+  }
+  if(noRegion) html+=`<span style="color:#9b8fa8;font-style:italic">${noRegion} case stud${noRegion===1?'y is':'ies are'} unmatched to a HESA provider and therefore not on the map.</span>`;
+  narrative.innerHTML=html;
+
+  // ── regional bar (sorted descending, colour-grouped) ──
+  const sortedRegs=REGIONS_ORDERED.filter(r=>regCnt[r]).sort((a,b)=>(regCnt[b]||0)-(regCnt[a]||0)).reverse();
+  if(sortedRegs.length){
+    Plotly.newPlot('chCasesGeoBar',[{
+      type:'bar',orientation:'h',
+      y:sortedRegs,x:sortedRegs.map(r=>regCnt[r]),
+      marker:{color:sortedRegs.map(r=>REGION_GROUP_COL[r]||C.pl),opacity:.9},
+      text:sortedRegs.map(r=>regCnt[r]),textposition:'outside',textfont:{size:11},
+      hovertemplate:'%{y}: %{x} cases<extra></extra>'
+    }],L({margin:{l:130,r:50,t:6,b:30},height:Math.max(220,sortedRegs.length*22),
+          showlegend:false,xaxis:{rangemode:'tozero',title:{text:'Case studies',font:{size:11}}},
+          yaxis:{tickfont:{size:11}}}),CFG);
+    const barEl=document.getElementById('chCasesGeoBar');
+    if(barEl && barEl.on) barEl.on('plotly_click',ev=>{
+      const r=ev.points[0].y; state.region=(state.region===r?'':r); draw(true);});
+  } else {
+    document.getElementById('chCasesGeoBar').innerHTML='<p class="note" style="text-align:center;padding:30px">No region data in this slice.</p>';
+  }
+
+  // ── region × sector heatmap ──
+  const rs={},allSectors=new Set();
+  for(const c of subset){
+    if(!c.sector) continue;
+    for(const r of (c.regions||[])){
+      (rs[r]=rs[r]||{})[c.sector]=(rs[r][c.sector]||0)+1;
+      allSectors.add(c.sector);
+    }
+  }
+  const rsRows=REGIONS_ORDERED.filter(r=>rs[r]).reverse();
+  const rsCols=[...allSectors];
+  if(rsRows.length && rsCols.length){
+    const z=rsRows.map(r=>rsCols.map(s=>(rs[r]||{})[s]||0));
+    Plotly.newPlot('chCasesGeoSector',[{
+      type:'heatmap',z:z,x:rsCols,y:rsRows,
+      colorscale:[[0,'#f3eef7'],[0.4,'#aaa5bb'],[0.75,'#60537f'],[1,'#3e1151']],
+      showscale:true,colorbar:{thickness:10,len:.7,tickfont:{size:9}},
+      hovertemplate:'%{y} × %{x}: %{z} cases<extra></extra>'
+    }],L({margin:{l:130,r:30,t:6,b:100},height:Math.max(200,rsRows.length*26),
+          xaxis:{tickangle:-30,tickfont:{size:10}},yaxis:{tickfont:{size:10.5}}}),CFG);
+    const sEl=document.getElementById('chCasesGeoSector');
+    if(sEl && sEl.on) sEl.on('plotly_click',ev=>{
+      const p=ev.points[0]; if(p.z===0) return;
+      state.region=p.y; state.sector=p.x; draw(true);});
+  } else {
+    document.getElementById('chCasesGeoSector').innerHTML='<p class="note" style="text-align:center;padding:30px">Not enough region × sector data.</p>';
+  }
+
+  // ── region × theme heatmap (top themes only) ──
+  const rt={},themeFreq={};
+  for(const c of subset){
+    for(const t of (c.topics||[])){
+      themeFreq[t]=(themeFreq[t]||0)+1;
+      for(const r of (c.regions||[])){
+        (rt[r]=rt[r]||{})[t]=(rt[r][t]||0)+1;
+      }
+    }
+  }
+  const topThemes=Object.entries(themeFreq).sort((a,b)=>b[1]-a[1]).slice(0,8).map(e=>e[0]);
+  const rtRows=REGIONS_ORDERED.filter(r=>rt[r]).reverse();
+  if(rtRows.length && topThemes.length){
+    const z=rtRows.map(r=>topThemes.map(t=>(rt[r]||{})[t]||0));
+    Plotly.newPlot('chCasesGeoTheme',[{
+      type:'heatmap',z:z,x:topThemes,y:rtRows,
+      colorscale:[[0,'#fff3f9'],[0.4,'#ffa3d2'],[0.75,'#ff4cad'],[1,'#ff0090']],
+      showscale:true,colorbar:{thickness:10,len:.7,tickfont:{size:9}},
+      hovertemplate:'%{y} × %{x}: %{z} cases<extra></extra>'
+    }],L({margin:{l:130,r:30,t:6,b:120},height:Math.max(200,rtRows.length*26),
+          xaxis:{tickangle:-30,tickfont:{size:10}},yaxis:{tickfont:{size:10.5}}}),CFG);
+    const tEl=document.getElementById('chCasesGeoTheme');
+    if(tEl && tEl.on) tEl.on('plotly_click',ev=>{
+      const p=ev.points[0]; if(p.z===0) return;
+      state.region=p.y; state.theme=p.x; draw(true);});
+  } else {
+    document.getElementById('chCasesGeoTheme').innerHTML='<p class="note" style="text-align:center;padding:30px">Not enough region × theme data.</p>';
+  }
+  };
+
+  // ── chart drawers operate on a subset ──
+  let tu=[], topU=[], secs=[];   // exposed for click handlers below
+  const drawCharts=(subset)=>{
+    // For per-university aggregations, expand each case onto every matched uni
+    const expanded=expandByUni(subset);
+    const uniCounts={};
+    for(const r of expanded){if(r.uniName) uniCounts[r.uniName]=(uniCounts[r.uniName]||0)+1;}
+    tu=Object.entries(uniCounts).sort((a,b)=>b[1]-a[1]).slice(0,15)
+       .map(([name,count])=>({name,count})).reverse();
+    if(tu.length){
+      Plotly.newPlot('chCasesUni',[{
+        type:'bar',orientation:'h',
+        y:tu.map(u=>u.name.replace('The University of','U.').replace('University of','U.').slice(0,40)),
+        x:tu.map(u=>u.count),
+        marker:{color:C.pd,opacity:.85},text:tu.map(u=>u.count),textposition:'outside',textfont:{size:11}
+      }],L({margin:{l:200,r:50,t:10,b:40},height:Math.max(280,tu.length*28),showlegend:false,
+            xaxis:{rangemode:'tozero',title:{text:'Case studies',font:{size:11}}}}),CFG);
+    } else emptyChart('chCasesUni');
+
+    // University × sector heatmap
+    const us={},allSec=new Set();
+    for(const r of expanded){
+      const c=r.c;if(!r.uniName||!c.sector)continue;
+      (us[r.uniName]=us[r.uniName]||{})[c.sector]=(us[r.uniName][c.sector]||0)+1;
+      allSec.add(c.sector);}
+    topU=Object.entries(us).map(([u,s])=>[u,Object.values(s).reduce((a,b)=>a+b,0)])
+      .sort((a,b)=>b[1]-a[1]).slice(0,12).map(x=>x[0]);
+    secs=[...allSec];
+    if(topU.length && secs.length){
+      const z=topU.map(u=>secs.map(s=>(us[u]||{})[s]||0));
+      Plotly.newPlot('chCasesUniSector',[{
+        type:'heatmap',
+        z:z,x:secs,y:topU.map(u=>u.replace('The University of','U.').replace('University of','U.').slice(0,32)),
+        colorscale:[[0,'#f3eef7'],[0.4,'#aaa5bb'],[0.75,'#60537f'],[1,'#3e1151']],
+        showscale:true,colorbar:{thickness:12,len:.7,tickfont:{size:10}},
+        hovertemplate:'%{y} × %{x}: %{z} case studies<extra></extra>'
+      }],L({margin:{l:160,r:20,t:10,b:120},height:Math.max(280,topU.length*32),
+            xaxis:{tickangle:-30,tickfont:{size:10.5}},yaxis:{tickfont:{size:11}}}),CFG);
+    } else emptyChart('chCasesUniSector');
+
+    // Sector donut
+    const ts=topCounts(subset,'sector',15);
+    if(ts.length){
+      Plotly.newPlot('chCasesSector',[{
+        type:'pie',hole:.55,labels:ts.map(s=>s.name),values:ts.map(s=>s.count),
+        marker:{colors:ts.map(s=>SECTOR_COL[s.name]||C.pl),line:{color:'#fff',width:2}},
+        textinfo:'percent',textposition:'inside',insidetextfont:{color:'#fff',size:11},
+        hovertemplate:'%{label}: %{value} (%{percent})<extra></extra>',sort:false
+      }],L({showlegend:true,legend:{orientation:'v',y:.5,x:1.02,font:{size:11}},
+            margin:{l:10,r:160,t:10,b:10}}),CFG);
+    } else emptyChart('chCasesSector');
+
+    // Themes
+    const tagMap={};
+    for(const c of subset) for(const t of (c.topics||[])) tagMap[t]=(tagMap[t]||0)+1;
+    const tt=Object.entries(tagMap).sort((a,b)=>b[1]-a[1]).slice(0,15);
+    if(tt.length){
+      Plotly.newPlot('chCasesThemes',[{
+        type:'bar',orientation:'h',
+        y:tt.map(t=>t[0]).reverse(),x:tt.map(t=>t[1]).reverse(),
+        marker:{color:C.pink,opacity:.8},text:tt.map(t=>t[1]).reverse(),textposition:'outside',textfont:{size:11}
+      }],L({margin:{l:200,r:50,t:10,b:40},height:Math.max(280,tt.length*26),showlegend:false,
+            xaxis:{rangemode:'tozero',title:{text:'Mentions',font:{size:11}}}}),CFG);
+    } else emptyChart('chCasesThemes','No topic tags in this slice.');
+
+    // Re-attach click handlers (Plotly.newPlot wipes them on each redraw)
+    attachChartClicks();
+    drawGeo(subset);
+    return {ts,tt};
+  };
+
+  const emptyChart=(id,msg)=>{
+    const el=document.getElementById(id);
+    el.innerHTML=`<p class="note" style="text-align:center;padding:40px">${msg||'No cases match the current filters.'}</p>`;
+    el.data=null;
+  };
+
+  // ── theme dropdown (NEW) + sector + uni dropdowns ──
+  const secSel=document.getElementById('caseSectorFilter');
+  const uniSel=document.getElementById('caseUniFilter');
+  const themeSel=document.getElementById('caseThemeFilter');
+
+  // Populate dropdowns from the FULL dataset on first load — selecting a value
+  // narrows the subset, so we don't want options to vanish on the user
+  allSectors=topCounts(items,'sector',50);
+  // Universities: count multi-uni cases for each institution they feature
+  const uniCountsAll={};
+  for(const r of expandByUni(items)){if(r.uniName) uniCountsAll[r.uniName]=(uniCountsAll[r.uniName]||0)+1;}
+  allUnis=Object.entries(uniCountsAll).sort((a,b)=>b[1]-a[1])
+                .map(([name,count])=>({name,count}));
+  const allThemes=(()=>{const m={};for(const c of items)for(const t of (c.topics||[]))m[t]=(m[t]||0)+1;
+    return Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([n,c])=>({name:n,count:c}));})();
+  secSel.innerHTML='<option value="">All sectors</option>'+
+    allSectors.map(s=>`<option value="${s.name}">${escapeHtml(s.name)} (${s.count})</option>`).join('');
+  uniSel.innerHTML='<option value="">All universities</option>'+
+    allUnis.map(u=>`<option value="${u.name}">${escapeHtml(u.name.replace('The University of','U.'))} (${u.count})</option>`).join('');
+  themeSel.innerHTML='<option value="">All themes</option>'+
+    allThemes.map(t=>`<option value="${t.name}">${escapeHtml(t.name)} (${t.count})</option>`).join('');
+
+  // ── chip selector: build once from full dataset, toggle on click ──
+  const buildChips=()=>{
+    const SECT_LIMIT=20, THEME_LIMIT=12, UNI_LIMIT=12;
+    const chipHTML=(kind,opt,active,extra='')=>
+      `<button class="dchip ${kind}${active?' active':''}" data-kind="${kind}" data-value="${escapeHtml(opt.name)}"${extra}>${escapeHtml(opt.name.replace('The University of','U.').replace('University of','U.'))}<span class="n">${opt.count}</span></button>`;
+    document.getElementById('chipSectors').innerHTML=
+      `<div class="chip-label">Sectors</div><div class="chip-group">`+
+      allSectors.slice(0,SECT_LIMIT).map(s=>chipHTML('sector',s,state.sector===s.name)).join('')+
+      `</div>`;
+    const themesToShow = state.theme && !allThemes.slice(0,THEME_LIMIT).find(t=>t.name===state.theme)
+      ? allThemes.slice(0,THEME_LIMIT-1).concat(allThemes.find(t=>t.name===state.theme))
+      : allThemes.slice(0,THEME_LIMIT);
+    document.getElementById('chipThemes').innerHTML=
+      `<div class="chip-label">Themes</div><div class="chip-group">`+
+      themesToShow.map(t=>chipHTML('theme',t,state.theme===t.name)).join('')+
+      (allThemes.length>THEME_LIMIT?`<button class="dchip more" data-more="theme">+ ${allThemes.length-THEME_LIMIT} more themes</button>`:'')+
+      `</div>`;
+    const unisToShow = state.uni && !allUnis.slice(0,UNI_LIMIT).find(u=>u.name===state.uni)
+      ? allUnis.slice(0,UNI_LIMIT-1).concat(allUnis.find(u=>u.name===state.uni))
+      : allUnis.slice(0,UNI_LIMIT);
+    document.getElementById('chipUnis').innerHTML=
+      `<div class="chip-label">Universities</div><div class="chip-group">`+
+      unisToShow.map(u=>chipHTML('uni',u,state.uni===u.name)).join('')+
+      (allUnis.length>UNI_LIMIT?`<button class="dchip more" data-more="uni">+ ${allUnis.length-UNI_LIMIT} more in dropdown ↓</button>`:'')+
+      `</div>`;
+    const hasFilter=state.sector||state.theme||state.uni||state.q||state.region;
+    document.getElementById('chipsClear').style.display=hasFilter?'inline-flex':'none';
+  };
+
+  // chip click → toggle filter (clicking active chip clears it)
+  document.getElementById('caseChipPanel').onclick=e=>{
+    const b=e.target.closest('button');if(!b)return;
+    if(b.id==='chipsClear'){state.q=state.sector=state.theme=state.uni=state.region='';draw();return;}
+    if(b.dataset.more){
+      // jump to the relevant dropdown for the long tail
+      const target=b.dataset.more==='theme'?themeSel:uniSel;
+      target.focus();target.scrollIntoView({behavior:'smooth',block:'center'});
+      return;
+    }
+    const k=b.dataset.kind,v=b.dataset.value;
+    if(!k)return;
+    state[k]=(state[k]===v?'':v);
+    draw(true);
+  };
+
+  // ── main re-render ──
+  const draw=(scroll)=>{
+    const filtered=applyFilters();
+    drawCharts(filtered);
+    drawInsights(items,filtered,state);
+    drawGallery(filtered);
+    // active filter pills
+    const pills=[];
+    if(state.sector) pills.push({label:'Sector: '+state.sector,key:'sector'});
+    if(state.region) pills.push({label:'Region: '+state.region,key:'region'});
+    if(state.uni)    pills.push({label:'University: '+state.uni.replace('The University of','U.').replace('University of','U.'),key:'uni'});
+    if(state.theme)  pills.push({label:'Theme: '+state.theme,key:'theme'});
+    if(state.q)      pills.push({label:'Search: "'+state.q+'"',key:'q'});
+    document.getElementById('caseActiveFilters').innerHTML=
+      pills.map(p=>`<button class="filter-pill" data-clear="${p.key}">${escapeHtml(p.label)} <span style="margin-left:6px;font-size:14px">×</span></button>`).join('')+
+      (pills.length>1?'<button class="filter-pill clear-all">Clear all</button>':'');
+    document.getElementById('caseGalleryTitle').textContent=
+      `Case study gallery · ${filtered.length} of ${items.length}`;
+    secSel.value=state.sector; uniSel.value=state.uni;
+    themeSel.value=state.theme;
+    document.getElementById('caseSearch').value=state.q;
+    buildChips();
+    if(scroll){
+      const insights=document.getElementById('casesInsights');
+      insights.scrollIntoView({behavior:'smooth',block:'start'});
+    }
+  };
+
+  const drawGallery=(filtered)=>{
+    document.getElementById('caseGallery').innerHTML=filtered.slice(0,200).map(c=>{
+      const cls='casecard '+(SECTOR_CLASS[c.sector]||'');
+      const tags=(c.topics||[]).slice(0,3).map(t=>`<span class="tag">${escapeHtml(t)}</span>`).join('');
+      // Prefer matched HESA names; fall back to the raw `university` field
+      const unis=(c.uni_names&&c.uni_names.length?c.uni_names:[c.university].filter(Boolean))
+        .map(n=>n.replace('The University of','U.').replace('University of','U.'));
+      const uniLabel=unis.length>1?unis.slice(0,2).join(' · ')+(unis.length>2?' +'+(unis.length-2):''):(unis[0]||'');
+      return `<a class="${cls}" href="${c.url}" target="_blank" rel="noopener">
+        <div class="title">${escapeHtml(c.title)}</div>
+        <div class="meta">
+          ${uniLabel?'<b>'+escapeHtml(uniLabel)+'</b>':''}
+          ${c.partner?'· '+escapeHtml(c.partner):''}
+          ${c.date?'· '+escapeHtml(c.date):''}
+        </div>
+        <div class="summary">${escapeHtml((c.summary||'').slice(0,260))}${c.summary&&c.summary.length>260?'…':''}</div>
+        <div class="footer">
+          <div>${tags||'<span class="tag">'+escapeHtml(c.sector||'')+'</span>'}</div>
+          <span class="read">Read →</span>
+        </div></a>`;
+    }).join('')+(filtered.length>200?`<p class="note" style="grid-column:1/-1;text-align:center;padding:20px">Showing first 200 of ${filtered.length}. Narrow the filters to see fewer.</p>`:'')
+      ||'<p class="note" style="grid-column:1/-1;text-align:center;padding:40px">No case studies match these filters.</p>';
+  };
+
+  // ── click handlers (re-attached after every chart redraw) ──
+  const attachChartClicks=()=>{
+    const setF=(k,v)=>{state[k]=v;draw(true);};
+    [['chCasesUni',ev=>{
+      const lbl=ev.points[0].y;
+      const match=tu.find(u=>u.name.replace('The University of','U.').replace('University of','U.').slice(0,40)===lbl);
+      if(match) setF('uni',match.name);
+    }],['chCasesSector',ev=>setF('sector',ev.points[0].label)],
+       ['chCasesThemes',ev=>setF('theme',ev.points[0].y)],
+       ['chCasesUniSector',ev=>{
+        const p=ev.points[0];
+        if(p.z===0) return;
+        const match=topU.find(u=>u.replace('The University of','U.').replace('University of','U.').slice(0,32)===p.y);
+        if(match){state.uni=match;state.sector=p.x;draw(true);}
+      }]].forEach(([id,h])=>{
+        const el=document.getElementById(id);
+        if(el && el.on) el.on('plotly_click',h);
+      });
+  };
+
+  // ── dropdown / search wiring ──
+  document.getElementById('caseSearch').oninput=e=>{state.q=e.target.value.toLowerCase().trim();draw();};
+  secSel.onchange=e=>{state.sector=e.target.value;draw();};
+  uniSel.onchange=e=>{state.uni=e.target.value;draw();};
+  themeSel.onchange=e=>{state.theme=e.target.value;draw();};
+  document.getElementById('caseActiveFilters').onclick=e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    if(b.classList.contains('clear-all')){state.q=state.sector=state.uni=state.theme=state.region='';}
+    else if(b.dataset.clear){state[b.dataset.clear]='';}
+    draw();
+  };
+
+  draw();
+}
+
+// ── insight panel: KPIs that recompute against the filtered subset ──
+function drawInsights(all,filtered,state){
+  const el=document.getElementById('casesInsights'); if(!el) return;
+  const n=filtered.length, total=all.length;
+  const unis=new Set(filtered.map(c=>c.university).filter(Boolean));
+  const partners=new Set(filtered.map(c=>c.partner).filter(Boolean));
+  const sectors=new Set(filtered.map(c=>c.sector).filter(s=>s&&s!=='Other / Unclassified'));
+  const themes=(()=>{const m={};for(const c of filtered)for(const t of (c.topics||[]))m[t]=(m[t]||0)+1;
+    return Object.entries(m).sort((a,b)=>b[1]-a[1]);})();
+  const topTheme=themes[0];
+  // Top university and its share of filtered set
+  const uniCnt={};for(const c of filtered) if(c.university) uniCnt[c.university]=(uniCnt[c.university]||0)+1;
+  const topUni=Object.entries(uniCnt).sort((a,b)=>b[1]-a[1])[0];
+
+  const filterLabel=()=>{
+    const bits=[];
+    if(state.sector) bits.push(`<b>${escapeHtml(state.sector)}</b>`);
+    if(state.theme)  bits.push(`<b>${escapeHtml(state.theme)}</b>`);
+    if(state.uni)    bits.push(`featuring <b>${escapeHtml(state.uni.replace('The University of','U.').replace('University of','U.'))}</b>`);
+    if(state.q)      bits.push(`matching "<b>${escapeHtml(state.q)}</b>"`);
+    return bits.length?bits.join(' · '):'across the full case study corpus';
+  };
+
+  // Headline narrative
+  let narrative;
+  if(n===0){
+    narrative=`No case studies match the current filters. Try broadening one of the criteria.`;
+  } else if(n===total){
+    narrative=`Browsing all <b>${n}</b> NCUB case studies. Use the chart clicks or dropdowns to drill into a sector, theme or institution.`;
+  } else {
+    narrative=`Showing <b>${n}</b> case studies (${Math.round(n/total*100)}% of corpus) ${filterLabel()}.`;
+    if(topUni && n>=3) narrative+=` <b>${topUni[0].replace('The University of','U.').replace('University of','U.')}</b> is the most featured (${topUni[1]} of ${n}).`;
+    if(topTheme && !state.theme && n>=3) narrative+=` Most common theme: <b>${topTheme[0]}</b> (${topTheme[1]} mentions).`;
+  }
+
+  el.innerHTML=
+    `<div style="font-size:13px;letter-spacing:1.5px;font-weight:700;color:#d9b9ea;text-transform:uppercase">Selection insights</div>
+     <div style="font-size:15px;color:#fff;margin-top:8px;line-height:1.5">${narrative}</div>
+     <div class="kpis" style="margin-top:14px">
+       <div class="kpi"><div class="v">${fmtN(n)}</div><div class="l">Case studies in selection</div></div>
+       <div class="kpi b"><div class="v">${fmtN(unis.size)}</div><div class="l">Distinct universities</div></div>
+       <div class="kpi g"><div class="v">${fmtN(partners.size)}</div><div class="l">Distinct business partners</div></div>
+       <div class="kpi y"><div class="v">${fmtN(sectors.size)}</div><div class="l">Sectors represented</div></div>
+     </div>`;
+}
+function escapeHtml(s){
+  return String(s||'').replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+}
+window.addEventListener('resize',()=>{document.querySelectorAll('.tab.show .chart, #heroPulse').forEach(el=>{ if(el.data) Plotly.Plots.resize(el); });});
+</script>
+</body>
+</html>

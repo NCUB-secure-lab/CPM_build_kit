@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NCUB Collaboration Progress Monitor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.27.0/plotly.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js"></script>
+<style>
+:root{
+  --purple-dark:#3e1151; --purple-mid:#60537f; --purple-light:#aaa5bb;
+  --grey-light:#d8d8da; --grey-bg:#f7f7f8;
+  --pink:#ff0090; --blue:#0085ca; --yellow:#fedb00; --green:#00B388;
+  --ink:#241032; --radius:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;background:var(--grey-bg);color:var(--ink);line-height:1.55}
+
+/* ---------- brand bar + nav ---------- */
+.brandbar{background:var(--purple-dark);color:#fff;padding:0 28px;position:sticky;top:0;z-index:50;box-shadow:0 2px 14px rgba(62,17,81,.25)}
+.brandrow{display:flex;align-items:center;gap:18px;padding:14px 0 10px}
+.logo{display:flex;align-items:baseline;gap:10px;font-weight:800;font-size:20px;letter-spacing:.5px}
+.logo .mark{background:var(--pink);color:#fff;border-radius:6px;padding:2px 9px;font-size:15px;letter-spacing:2px}
+.logo small{font-weight:400;color:var(--purple-light);font-size:12.5px;letter-spacing:.3px}
+nav{display:flex;gap:4px;overflow-x:auto;padding-bottom:0}
+nav button{appearance:none;border:0;background:transparent;color:#cfc8da;font:inherit;font-size:13.5px;font-weight:600;padding:10px 14px 12px;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;letter-spacing:.2px}
+nav button:hover{color:#fff}
+nav button.active{color:#fff;border-bottom-color:var(--pink)}
+nav button:focus-visible{outline:2px solid var(--yellow);outline-offset:-2px}
+
+main{max-width:1240px;margin:0 auto;padding:30px 24px 70px}
+.tab{display:none}.tab.show{display:block;animation:fade .35s ease}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+h1{font-size:clamp(28px,4vw,44px);line-height:1.12;color:var(--purple-dark);font-weight:800;letter-spacing:-.5px}
+h2{font-size:24px;color:var(--purple-dark);margin:0 0 6px;font-weight:800;letter-spacing:-.3px}
+h3{font-size:16px;color:var(--purple-dark);font-weight:700}
+.eyebrow{font-size:11.5px;font-weight:800;letter-spacing:2.4px;text-transform:uppercase;color:var(--pink);margin-bottom:8px}
+.lede{font-size:16.5px;color:#4c3b5c;max-width:840px}
+.note{font-size:12px;color:#7c7387;margin-top:8px}
+.section{margin-top:34px}
+
+.card{background:#fff;border:1px solid var(--grey-light);border-radius:var(--radius);padding:22px;box-shadow:0 1px 3px rgba(36,16,50,.05)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+@media(max-width:980px){.grid2,.grid3,.grid4{grid-template-columns:1fr}}
+
+/* hero */
+.hero{background:linear-gradient(135deg,var(--purple-dark) 0%,#56156f 70%,#6a1a86 100%);border-radius:20px;color:#fff;padding:46px 44px 38px;position:relative;overflow:hidden}
+.hero h1{color:#fff}
+.hero .lede{color:#e6def0;margin-top:14px}
+.hero .pulse{margin-top:26px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:14px 18px 4px}
+.pulse-label{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#d9b9ea;font-weight:700}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:22px}
+@media(max-width:980px){.kpis{grid-template-columns:repeat(2,1fr)}}
+.kpi{background:#fff;border-radius:var(--radius);padding:16px 18px;border-top:5px solid var(--pink)}
+.kpi.b{border-top-color:var(--blue)}.kpi.g{border-top-color:var(--green)}.kpi.y{border-top-color:var(--yellow)}
+.kpi .v{font-size:27px;font-weight:800;color:var(--purple-dark);letter-spacing:-.5px}
+.kpi .l{font-size:12px;color:#6d6478;margin-top:2px;line-height:1.35}
+.kpi .d{font-size:12.5px;font-weight:700;margin-top:6px}
+.up{color:var(--green)}.down{color:var(--pink)}.flat{color:#9b8fa8}
+
+.tilegrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:20px}
+@media(max-width:980px){.tilegrid{grid-template-columns:1fr}}
+.tile{background:#fff;border:1px solid var(--grey-light);border-radius:var(--radius);padding:20px;cursor:pointer;transition:transform .15s,box-shadow .15s;border-left:6px solid var(--purple-mid)}
+.tile:hover{transform:translateY(-3px);box-shadow:0 8px 22px rgba(62,17,81,.13)}
+.tile h3{margin-bottom:6px}
+.tile p{font-size:13.5px;color:#5d5368}
+.tile .go{font-size:12.5px;font-weight:700;color:var(--pink);margin-top:10px;display:inline-block}
+
+.chart{width:100%;min-height:380px}
+.chart.tall{min-height:520px}
+.chart.short{min-height:300px}
+.charthead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+
+/* pillars */
+.pillars{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:22px}
+@media(max-width:1080px){.pillars{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:640px){.pillars{grid-template-columns:1fr}}
+.pillar{background:#fff;border-radius:var(--radius);overflow:hidden;border:1px solid var(--grey-light);display:flex;flex-direction:column}
+.pillar .head{color:#fff;padding:14px 16px;font-weight:800;display:flex;justify-content:space-between;align-items:center;font-size:15px}
+.pillar .head .num{opacity:.85;font-size:13px}
+.pillar .body{padding:16px;flex:1}
+.pillar .count{display:inline-block;background:var(--grey-bg);border-radius:999px;padding:3px 12px;font-size:12px;font-weight:700;color:var(--purple-dark);margin-bottom:10px}
+.pillar p{font-size:13px;color:#5d5368;margin-bottom:10px}
+.pillar ol{padding-left:18px;font-size:12.5px;color:#3f3349}
+.pillar ol li{margin-bottom:4px}
+.badge-new{background:var(--yellow);color:var(--purple-dark);font-size:10.5px;font-weight:800;letter-spacing:1px;padding:2px 8px;border-radius:999px}
+
+/* table 1 */
+table.cpm{width:100%;border-collapse:collapse;font-size:13.5px;background:#fff;border-radius:var(--radius);overflow:hidden}
+table.cpm th{background:var(--purple-dark);color:#fff;text-align:left;padding:11px 12px;font-size:12.5px;letter-spacing:.3px}
+table.cpm th.c, table.cpm td.c{text-align:center}
+table.cpm td{padding:9px 12px;border-bottom:1px solid #efedf2}
+table.cpm tr.cat td{background:#ece8f0;font-weight:800;color:var(--purple-dark);font-size:12.5px;letter-spacing:.5px;text-transform:uppercase}
+table.cpm tr.data:hover td{background:#fdf3fa}
+.arrow{font-weight:900;font-size:15px}
+.a-uu{color:var(--green)}.a-u{color:var(--green)}.a-f{color:#d4b500}.a-d{color:var(--pink)}.a-dd{color:var(--pink)}
+.legend{font-size:12px;color:#6d6478;display:flex;gap:18px;flex-wrap:wrap;margin-top:10px}
+
+/* institution explorer */
+.selrow{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:16px}
+select,input[type=search]{font:inherit;font-size:14px;padding:10px 14px;border-radius:10px;border:1.5px solid var(--purple-light);background:#fff;color:var(--ink);min-width:280px}
+select:focus,input:focus{outline:2px solid var(--pink);border-color:var(--pink)}
+.profile{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.chip{background:#fff;border:1px solid var(--grey-light);border-radius:999px;padding:6px 14px;font-size:12.5px;font-weight:700;color:var(--purple-dark)}
+.chip-trac{background:#fff0f7;border-color:#ffb3da;color:#a8005a}
+.chip-trac b{color:var(--pink)}
+.chip-trac.chip-trac-na{background:#f3f0f7;border-color:#d6d0e0;color:#6d6478}
+.chip-trac.chip-trac-na b{color:#6d6478;font-weight:600}
+.chip b{color:var(--pink)}
+.pct-row{display:flex;align-items:center;gap:10px;margin:10px 0}
+.pct-row .lab{width:230px;font-size:12.5px;font-weight:600;color:#3f3349;flex-shrink:0}
+.pct-bar{flex:1;height:14px;background:#ece8f0;border-radius:999px;position:relative;overflow:hidden}
+.pct-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--blue),var(--pink));transition:width .5s ease}
+.pct-val{width:54px;text-align:right;font-size:12.5px;font-weight:800;color:var(--purple-dark)}
+
+.subnav{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.subnav button{appearance:none;font:inherit;font-size:13px;font-weight:700;padding:8px 18px;border-radius:999px;border:1.5px solid var(--purple-light);background:#fff;color:var(--purple-mid);cursor:pointer;transition:all .15s}
+.subnav button:hover{border-color:var(--purple-dark);color:var(--purple-dark)}
+.subnav button.active{background:var(--purple-dark);border-color:var(--purple-dark);color:#fff}
+.subnav button:focus-visible{outline:2px solid var(--pink);outline-offset:2px}
+.subpanel{display:none}.subpanel.show{display:block;animation:fade .3s ease}
+.trendpanel{display:none}.trendpanel.show{display:block;animation:fade .3s ease}
+.placeholder{border:2px dashed var(--purple-light);border-radius:var(--radius);background:#fff;padding:40px;text-align:center}
+.placeholder .big{font-size:42px}
+.maptools{display:flex;gap:10px;flex-wrap:wrap}
+.maptools select{min-width:180px;padding:7px 12px;font-size:13px}
+.exportrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.cap-toggle{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap}
+.cap-toggle .cap-lab{font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--purple-mid)}
+.cap-toggle .cap-btns{display:inline-flex;border:1.5px solid var(--purple-light);border-radius:999px;padding:2px;background:#fff}
+.kpi .v .cap-alt{display:block;font-size:12px;font-weight:600;color:var(--blue);margin-top:2px}
+.btn-xls{appearance:none;border:1.5px solid var(--green);background:#fff;color:#00805f;font:inherit;font-size:11.5px;font-weight:700;padding:4px 11px;border-radius:999px;cursor:pointer;transition:all .15s;white-space:nowrap;margin-left:auto}
+.btn-xls:hover{background:var(--green);color:#fff}
+.btn-xls:focus-visible{outline:2px solid var(--pink);outline-offset:2px}
+.xls-row{display:flex;justify-content:flex-end;margin:-4px 0 6px}
+.btn-export{appearance:none;border:1.5px solid var(--purple-dark);background:#fff;color:var(--purple-dark);font:inherit;font-size:13px;font-weight:700;padding:9px 16px;border-radius:999px;cursor:pointer;transition:all .15s}
+.btn-export:hover{background:var(--purple-dark);color:#fff}
+.btn-export:focus-visible{outline:2px solid var(--pink);outline-offset:2px}
+.casecard{background:#fff;border:1px solid var(--grey-light);border-radius:12px;padding:16px;display:flex;flex-direction:column;transition:transform .15s,box-shadow .15s;text-decoration:none;color:inherit;border-top:4px solid var(--purple-mid)}
+.casecard:hover{transform:translateY(-3px);box-shadow:0 8px 22px rgba(62,17,81,.12)}
+.casecard.s-life{border-top-color:var(--pink)}
+.casecard.s-eng{border-top-color:var(--blue)}
+.casecard.s-dig{border-top-color:var(--green)}
+.casecard.s-energy{border-top-color:#88c14b}
+.casecard.s-creative{border-top-color:#d05fb3}
+.casecard.s-agri{border-top-color:#c08f4a}
+.casecard.s-fin{border-top-color:var(--purple-mid)}
+.casecard .title{font-size:14.5px;font-weight:700;color:var(--purple-dark);line-height:1.35;margin-bottom:8px}
+.casecard .meta{font-size:11.5px;color:#6d6478;display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.casecard .meta b{color:var(--purple-dark)}
+.casecard .summary{font-size:12.5px;color:#4c3b5c;line-height:1.5;flex:1;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
+.casecard .footer{margin-top:10px;display:flex;justify-content:space-between;align-items:center}
+.casecard .tag{background:var(--grey-bg);color:var(--purple-dark);font-size:10.5px;padding:2px 9px;border-radius:999px;font-weight:600}
+.casecard .read{font-size:11.5px;font-weight:700;color:var(--pink)}
+.filter-pill{appearance:none;font:inherit;font-size:12px;font-weight:600;padding:4px 12px;border-radius:999px;border:1.5px solid var(--purple-mid);background:var(--purple-mid);color:#fff;cursor:pointer;display:inline-flex;align-items:center;transition:all .15s}
+.filter-pill:hover{background:var(--purple-dark);border-color:var(--purple-dark)}
+.filter-pill.clear-all{background:#fff;color:var(--pink);border-color:var(--pink)}
+.filter-pill.clear-all:hover{background:var(--pink);color:#fff}
+#chCasesUni .point, #chCasesSector .slice, #chCasesThemes .point, #chCasesUniSector .nsewdrag{cursor:pointer}
+.split-btn{appearance:none;background:transparent;border:0;font:inherit;font-size:12.5px;font-weight:600;padding:5px 14px;border-radius:999px;cursor:pointer;color:var(--purple-mid);transition:all .12s}
+.split-btn:hover{color:var(--purple-dark)}
+.split-btn.active{background:var(--purple-dark);color:#fff}
+.split-btn[disabled]{opacity:.4;cursor:not-allowed}
+.growth-strip{background:linear-gradient(135deg,#3e1151 0%,#56156f 100%);color:#fff;border-radius:14px;padding:18px 22px;margin-top:14px;margin-bottom:18px}
+.growth-strip .label{font-size:13px;letter-spacing:1.5px;font-weight:700;color:#d9b9ea;text-transform:uppercase}
+.growth-strip .narrative{font-size:14px;color:#fff;margin-top:8px;line-height:1.55}
+.growth-strip .narrative b{color:#fed8e9}
+.growth-strip .badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.cagr-badge{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);border-radius:10px;padding:9px 13px;min-width:170px;flex:0 1 auto}
+.cagr-badge .name{font-size:11px;color:#d9b9ea;letter-spacing:.5px;font-weight:600;text-transform:uppercase}
+.cagr-badge .val{font-size:18px;font-weight:800;color:#fff;margin-top:2px;display:flex;align-items:baseline;gap:6px}
+.cagr-badge .arrow{font-size:14px}
+.cagr-badge .label-band{font-size:10.5px;color:#cfc3dd;margin-top:1px}
+.cagr-badge.signif-up{background:rgba(0,179,136,.20);border-color:rgba(0,179,136,.45)}
+.cagr-badge.mod-up{background:rgba(0,133,202,.18);border-color:rgba(0,133,202,.42)}
+.cagr-badge.stable{background:rgba(170,165,187,.16);border-color:rgba(170,165,187,.30)}
+.cagr-badge.mod-down{background:rgba(254,219,0,.16);border-color:rgba(254,219,0,.42)}
+.cagr-badge.signif-down{background:rgba(255,0,144,.20);border-color:rgba(255,0,144,.45)}
+.cagr-badge.nd{opacity:.55}
+.cagr-badge.nd .val{font-size:13px;font-weight:600}
+.chip-section{padding:10px 0;border-top:1px solid #eeebf1;display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap}
+.chip-section:first-child{border-top:0;padding-top:6px}
+.chip-section .chip-label{font-size:11.5px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--purple-mid);padding-top:6px;min-width:90px;flex-shrink:0}
+.chip-section .chip-group{display:flex;gap:6px;flex-wrap:wrap;flex:1}
+.dchip{appearance:none;font:inherit;font-size:12.5px;font-weight:600;padding:6px 14px;border-radius:999px;border:1.5px solid var(--grey-light);background:#fff;color:var(--purple-dark);cursor:pointer;transition:all .12s;display:inline-flex;align-items:center;gap:6px;line-height:1.2}
+.dchip:hover{border-color:var(--purple-mid);background:#fdf3fa}
+.dchip .n{background:var(--grey-bg);color:var(--purple-mid);font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:999px;line-height:1.4}
+.dchip:hover .n{background:#fff}
+.dchip.active{background:var(--purple-dark);color:#fff;border-color:var(--purple-dark)}
+.dchip.active .n{background:rgba(255,255,255,.18);color:#fff}
+.dchip.more{border-style:dashed;color:var(--purple-mid);font-weight:700}
+.dchip.sector.active{background:var(--pink);border-color:var(--pink)}
+.dchip.theme.active{background:var(--blue);border-color:var(--blue)}
+.dchip.uni.active{background:var(--purple-dark);border-color:var(--purple-dark)}
+footer{text-align:center;font-size:12px;color:#8b8195;padding:30px 0 10px}
+.src{font-size:11.5px;color:#8b8195;margin-top:6px}
+</style>
+</head>
+<body>
+
+<div class="brandbar">
+  <div class="brandrow">
+    <div class="logo"><span class="mark">NCUB</span> Collaboration Progress Monitor <small>Research &amp; Innovation · State of the Relationship</small></div>
+  </div>
+  <nav id="nav">
+    <button data-tab="home" class="active">Home</button>
+    <button data-tab="context">Economic context</button>
+    <button data-tab="framework">CPM framework</button>
+    <button data-tab="trends">Trends</button>
+    <button data-tab="explorer">Institution explorer</button>
+    <button data-tab="cases">Case studies</button>
+  </nav>
+</div>
+
+<main>
+
+<!-- ============ HOME ============ -->
+<section class="tab show" id="tab-home">
+  <div class="hero">
+    <div class="eyebrow" style="color:#ffb1dd">Collaboration Progress Monitor 2025/26</div>
+    <h1>How well are UK universities and businesses working together?</h1>
+    <p class="lede">The Collaboration Progress Monitor (CPM) tracks the health of university–business collaboration across the UK. Built by the National Centre for Universities and Business (NCUB), it brings together HESA HE-BCI data, economic context and institution-level analysis into one evidence base — extending Chapter 1 of the <em>State of the Relationship</em>.</p>
+    <div class="pulse">
+      <div class="pulse-label">Real business collaboration income, 2014/15 – 2024/25 (constant 2024/25 prices)</div>
+      <div id="heroPulse" style="height:120px"></div>
+    </div>
+  </div>
+
+  <div class="kpis" id="homeKpis"></div>
+
+  <div class="tilegrid">
+    <div class="tile" data-go="context"><h3>Economic context</h3><p>GDP momentum, international comparisons, university finances, business R&amp;D and venture capital — the backdrop against which collaboration happens.</p><span class="go">Explore →</span></div>
+    <div class="tile" data-go="framework"><h3>The CPM framework</h3><p>Three established pillars and 13 measures — plus a proposed fourth pillar on R&amp;D collaboration built from Gateway to Research.</p><span class="go">Explore →</span></div>
+    <div class="tile" data-go="trends"><h3>Trends — Research and Innovation</h3><p>What the latest HE-BCI data says: trends, funnel plots, regional distributions and the full indicator scorecard.</p><span class="go">Explore →</span></div>
+    <div class="tile" data-go="trends" data-sub="skills"><h3>Trends — Skills and Talent</h3><p>A new set of metrics on graduate talent, placements and workforce development — in production.</p><span class="go">Preview →</span></div>
+    <div class="tile" data-go="explorer"><h3>Institution explorer</h3><p>Pick any of 231 providers and benchmark its trajectory against its cluster, its region and the national picture.</p><span class="go">Explore →</span></div>
+    <div class="tile"><h3>About the data</h3><p>HESA HE-BCI panel, 2014/15–2024/25, 231 providers. Income deflated to constant 2024/25 prices using CPI. Builds on NCUB's State of the Relationship 2025, Chapter 1.</p></div>
+  </div>
+</section>
+
+<!-- ============ CONTEXT ============ -->
+<section class="tab" id="tab-context">
+  <div class="eyebrow">Tab 2</div>
+  <h2>Economic context</h2>
+  <p class="note" id="ctxUpdated" style="margin:2px 0 6px"></p>
+  <p class="lede">Collaboration doesn't happen in a vacuum. A stop-start economy, tightening university finances and a softer investment climate all shape what universities and businesses can do together.</p>
+
+  <div class="section card">
+    <div class="charthead"><h3>UK monthly GDP growth and what drives it</h3><span class="note">Hover any month · click legend to isolate sectors</span></div>
+    <div id="chGdp" class="chart"></div>
+    <div class="src">Source: ONS monthly GDP (dataset MGDP, series ECY2/ECY4/ECY9). Sector contributions approximated with GVA weights; services shown as residual. Falls back to NCUB (2025) digitised values when offline.</div>
+  </div>
+
+  <div class="section grid2">
+    <div class="card">
+      <div class="charthead"><h3>The UK against peer economies</h3></div>
+      <div id="chIntl" class="chart"></div>
+      <div class="src">Source: ONS (IHYQ) for the UK; OECD for comparators; NCUB (2025) cached values when offline. Quarterly GDP growth.</div>
+    </div>
+    <div class="card">
+      <div class="charthead"><h3>Universities under financial strain</h3></div>
+      <div id="chDeficit" class="chart"></div>
+      <div class="src">Source: NCUB analysis (2025) of HESA financial indicators. Surplus/(deficit) excludes pension adjustment.</div>
+    </div>
+  </div>
+
+  <div class="section grid2">
+    <div class="card">
+      <div class="charthead"><h3>Business R&amp;D spend has plateaued</h3></div>
+      <div id="chBerd" class="chart"></div>
+      <div class="src">Source: NCUB analysis (2025) of ONS BERD, constant prices (CPI 2023=100). Shaded band: 95% CI on forecast.</div>
+    </div>
+    <div class="card">
+      <div class="charthead"><h3>Venture capital: the UK leads Europe, trails the US</h3></div>
+      <div id="chVc" class="chart"></div>
+      <div class="src">Source: NCUB (2025) based on OECD. VC investment as % of GDP.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FRAMEWORK ============ -->
+<section class="tab" id="tab-framework">
+  <div class="eyebrow">Tab 3</div>
+  <h2>The CPM framework: four categories, 13+ measures</h2>
+  <p class="lede">The R&amp;I Collaboration Progress Monitor provides a systematic, evidence-based view of university–business collaboration across the UK. Three established pillars cover engagement volume, financial investment and commercial outputs — and the fourth pillar, now live with its first metrics, uses UKRI's Gateway to Research (GtR) to capture publicly funded collaborative R&amp;D at the project level.</p>
+
+  <div class="pillars">
+    <div class="pillar">
+      <div class="head" style="background:var(--blue)">Collaboration activity <span class="num">01</span></div>
+      <div class="body">
+        <span class="count">2 measures</span>
+        <p>Counts the volume of formal interactions between UK universities and business, distinguishing SMEs (under 250 employees) from large businesses.</p>
+        <ol><li>Total interactions with SMEs</li><li>Total interactions with large business</li></ol>
+      </div>
+    </div>
+    <div class="pillar">
+      <div class="head" style="background:var(--green)">Investment in collaboration <span class="num">02</span></div>
+      <div class="body">
+        <span class="count">8 measures</span>
+        <p>Tracks the financial flows that underpin collaborative R&amp;D: income from business partnerships, industry contributions to HE research spend, and Innovate UK grant funding.</p>
+        <ol><li>Business collaboration income</li><li>% of HE collaboration income from business</li><li>Domestic industry funds in HE R&amp;D</li><li>Overseas industry funds in HE R&amp;D</li><li>Income from interactions with SMEs</li><li>Income from interactions with large business</li><li>Total Innovate UK grants</li><li>Income per Innovate UK grant</li></ol>
+      </div>
+    </div>
+    <div class="pillar">
+      <div class="head" style="background:var(--pink)">Products of collaboration <span class="num">03</span></div>
+      <div class="body">
+        <span class="count">3 measures</span>
+        <p>Captures tangible commercial outputs: licensed intellectual property, licensing income earned, and active spinout companies formed from HE research.</p>
+        <ol><li>Number of licences granted</li><li>Total licensing income</li><li>Academic spinouts</li></ol>
+      </div>
+    </div>
+    <div class="pillar">
+      <div class="head" style="background:var(--purple-mid)">R&amp;D collaboration (GtR) <span class="num">04 <span class="badge-new" style="background:var(--green);color:#fff">LIVE</span></span></div>
+      <div class="body">
+        <span class="count">13 measures · 3 dimensions</span>
+        <p>Built from UKRI's <strong>Gateway to Research</strong>: every publicly funded R&amp;I project with a business partner, linked to universities, funders and mechanisms.</p>
+        <ol>
+          <li><b>Volume &amp; scale</b> — V1–V6: links, partners, projects, total and mean grant value</li>
+          <li><b>Intensity &amp; productivity</b> — I1–I3, I5a, I6a: collaborations per university and per business, multi-university businesses, KTP and Collaborative R&amp;D project counts</li>
+          <li><b>Innovation depth</b> — D6, D7: associated publications and further funding leveraged</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div class="section card">
+    <div class="charthead"><h3>How the four pillars connect</h3></div>
+    <div id="chPillarFlow" class="chart short"></div>
+    <p class="note">Each pillar measures a different stage of the same relationship: activity creates the pipeline, investment fuels it, GtR captures the publicly co-funded core, and products are what comes out the other end.</p>
+  </div>
+
+  <div class="section card">
+    <h3>Why add a GtR pillar?</h3>
+    <p style="font-size:14px;color:#4c3b5c;margin-top:8px">HE-BCI captures income flowing into universities, but says little about the <em>structure</em> of collaboration. Gateway to Research lists every UKRI-funded project together with its participating organisations, so it can show who collaborates with whom, on what, and how partnership networks evolve. It also covers collaboration that generates no direct HE income — in-kind partnerships, consortium membership and co-created research agendas — that the current monitor misses. Linking GtR organisation identifiers to Companies House would additionally allow the monitor to profile the size, sector and geography of partner firms.</p>
+  </div>
+
+  <div class="section">
+    <div class="charthead"><h3>Pillar 4 indicator reference</h3><span class="note">13 currently live GtR measures · hover a row for methodology notes</span></div>
+    <div style="overflow-x:auto"><table class="cpm" id="gtrTable"></table></div>
+    <div class="exportrow"><button class="btn-export" data-csv="gtr">⬇ GtR indicators (CSV)</button></div>
+    <div class="src">Source: NCUB analysis of UKRI Gateway to Research. Pooled across project start years unless stated otherwise.</div>
+  </div>
+</section>

@@ -1,0 +1,14 @@
+id,category,name,value,unit,note
+V1,Volume & Scale,Total R&I collaboration links,"20,302",count,
+V2,Volume & Scale,Unique UK businesses in R&I collaboration,"12,297",count,
+V3,Volume & Scale,Unique universities in R&I collaboration,348,count,
+V4,Volume & Scale,Unique R&I projects with business partner,"17,656",count,
+V5,Volume & Scale,Total associated grant value,"£31,371,321,936",£ GBP,Sum of grant values for all R&I collaboration projects
+V6,Volume & Scale,Mean grant value per collaboration,"£1,545,233",£ GBP,
+I1,Intensity & Productivity,Avg R&I collaborations per university,58.3,links/uni,
+I2,Intensity & Productivity,Avg R&I collaborations per business,1.7,links/biz,
+I3,Intensity & Productivity,Businesses partnering 2+ universities (%),5.5%,%,677 businesses engaged with more than one university
+I5a,Intensity & Productivity,KTP projects (count),"2,329",count,grant_category = Knowledge Transfer Partnership
+I6a,Intensity & Productivity,Collaborative R&D projects (count),"13,171",count,"Collaborative R&D, Feasibility Studies, Grant for R&D, SBRI — excl. KTPs"
+D6,Innovation Depth,Associated publications (total across projects),"495,888",count,
+D7,Innovation Depth,Further funding records leveraged,"61,314",count,Projects reporting subsequent funding awards

@@ -1,0 +1,627 @@
+<!-- ============ TRENDS (Research and Innovation + Skills and Talent) ============ -->
+<section class="tab" id="tab-trends">
+  <div class="eyebrow">Tab 4</div>
+  <h2>Trends</h2>
+  <p class="lede">Two bodies of evidence, side by side: the Research and Innovation picture from HE-BCI (231 providers, 2014/15–2024/25) and emerging Skills and Talent metrics covering graduate pipelines, placements and workforce development.</p>
+
+  <!-- Top-level toggle between the two sub-tabs -->
+  <div class="subnav" id="trendsSubnav" style="margin-top:18px">
+    <button data-trend="ri" class="active">Research and Innovation</button>
+    <button data-trend="skills">Skills and Talent</button>
+  </div>
+
+  <!-- ───── Research and Innovation sub-tab ───── -->
+  <div class="trendpanel show" id="trend-ri">
+  <div class="subnav" id="findSubnav" style="margin-top:14px">
+    <button data-sub="overview" class="active">Overview</button>
+    <button data-sub="spinouts">Spinout activity</button>
+    <button data-sub="cagr">Growth analysis</button>
+    <button data-sub="gtr">R&amp;D collaboration</button>
+  </div>
+
+  <div class="subpanel show" id="sub-overview">
+  <div class="kpis" id="findKpis" style="margin-top:20px"></div>
+
+  <div class="section grid2">
+    <div class="card">
+      <div class="charthead"><h3>Business collaboration income, real terms</h3><span class="note">SME vs large business</span></div>
+      <div id="chBciTrend" class="chart"></div>
+      <div class="src">HE-BCI panel. Consultancy + facilities &amp; equipment + contract research + CPD income from business, deflated by CPI.</div>
+    </div>
+    <div class="card">
+      <div class="charthead"><h3>Interactions: SME recovery, large business plateau</h3></div>
+      <div id="chInteractions" class="chart"></div>
+      <div class="src">Counts of consultancy, facilities &amp; equipment and contract research engagements.</div>
+    </div>
+  </div>
+
+  <div class="section card">
+    <div class="charthead"><h3>Growth vs scale: a funnel view of the sector</h3><span class="note">Each dot is a university · hover for details · click legend to filter clusters</span></div>
+    <div id="chFunnel" class="chart tall"></div>
+    <div class="src">Real BCI growth 2023/24 → 2024/25 against 2023/24 real BCI (log scale). Providers with 2023/24 BCI under £200k excluded. Smaller providers show much wider variance — exactly the funnel pattern expected when income is lumpy and contract-driven.</div>
+  </div>
+
+  <div class="section card">
+    <div class="charthead"><h3>Significant diversity within and across regions</h3><span class="note">Box = interquartile range · points = individual providers</span></div>
+    <div id="chRegionBox" class="chart tall"></div>
+    <div class="src">CPI-adjusted BCI growth by provider, 2023/24 → 2024/25, grouped by region. Colours: devolved nations (purple), southern England (pink), Midlands &amp; East (blue), northern England (green).</div>
+  </div>
+
+  <div class="section card">
+    <div class="charthead">
+      <h3>Collaboration across the map</h3>
+      <div class="maptools">
+        <select id="mapMetric" aria-label="Map metric">
+          <option value="real">Real BCI (£m)</option>
+          <option value="realpp">Real BCI per provider (£m)</option>
+          <option value="growth">Median provider BCI growth, latest year (%)</option>
+          <option value="n_sme">SME interactions</option>
+          <option value="n_lc">Large business interactions</option>
+          <option value="lic">Licensing income (£m)</option>
+          <option value="spin">Spinouts (3+ yrs)</option>
+        </select>
+        <select id="mapYear" aria-label="Map year"></select>
+      </div>
+    </div>
+    <div id="chMap" class="chart tall"></div>
+    <div class="src">Hover a region for detail · click a region to pin its trend below the map. Boundaries: ONS European Electoral Regions (simplified) plus NI outline. All income in constant 2024/25 prices.</div>
+    <div id="mapDetail" style="display:none;margin-top:14px;border-top:1px solid var(--grey-light);padding-top:12px">
+      <div class="charthead"><h3 id="mapDetailTitle"></h3></div>
+      <div id="chMapTrend" class="chart short"></div>
+    </div>
+  </div>
+
+  <div class="section grid2">
+    <div class="card">
+      <div class="charthead"><h3>Income mix is shifting</h3></div>
+      <div id="chMix" class="chart"></div>
+      <div class="src">Shares of real business interaction income by stream: consultancy, facilities &amp; equipment, and contract research (SME + large business clients; CPD &amp; training and non-commercial clients excluded). Hover shows £ values.</div>
+    </div>
+    <div class="card">
+      <div class="charthead"><h3>Commercialisation: spinouts up, licensing soft</h3></div>
+      <div id="chCommerc" class="chart"></div>
+      <div class="src">Spinouts surviving 3+ years (sum across providers) and real licensing income from business (SME + large; excludes non-commercial licensees).</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="charthead"><h3>Indicator scorecard</h3><span class="note">Computed from the panel · hover a cell for the underlying numbers</span></div>
+    <div style="overflow-x:auto"><table class="cpm" id="scorecard"></table></div>
+    <div class="legend">
+      <span><span class="arrow a-uu">⏫</span> 10%+ above baseline</span>
+      <span><span class="arrow a-u">⌃</span> 1–10% above</span>
+      <span><span class="arrow a-f">—</span> within ±1%</span>
+      <span><span class="arrow a-d">⌄</span> 1–10% below</span>
+      <span><span class="arrow a-dd">⏬</span> 10%+ below baseline</span>
+    </div>
+    <div class="src">Benchmarks: annual change (2024/25 vs 2023/24), short-term (2024/25 vs five-year average), long-term (2024/25 vs ten-year average), pre-Covid (2024/25 vs 2018/19). All income measures in constant prices.</div>
+    <div class="exportrow">
+      <button class="btn-export" data-csv="national">⬇ National time series (CSV)</button>
+      <button class="btn-export" data-csv="regional">⬇ Regional aggregates (CSV)</button>
+      <button class="btn-export" data-csv="scorecard">⬇ Scorecard (CSV)</button>
+    </div>
+  </div>
+
+  <!-- Pareto concentration -->
+  <div class="section card">
+    <div class="charthead">
+      <h3>How concentrated is business collaboration income?</h3>
+      <select id="paretoMetric" aria-label="Pareto metric" style="min-width:220px;padding:7px 12px;font-size:13px">
+        <option value="real">Business collaboration income</option>
+        <option value="contract">Contract research income</option>
+        <option value="consult">Consultancy income</option>
+        <option value="fe">Facilities &amp; equipment income</option>
+        <option value="lic">Licensing income</option>
+        <option value="ext">External investment in spinouts</option>
+      </select>
+    </div>
+    <div id="chPareto" class="chart"></div>
+    <div id="paretoNarrative" style="font-size:13.5px;color:#4c3b5c;line-height:1.6;margin-top:8px"></div>
+    <div class="src">A Pareto-style curve: providers are ranked from highest to lowest, then plotted as cumulative share of total income (y) against cumulative share of providers (x). A 45° line would mean perfectly equal distribution; the further the curve sits above it, the more concentrated the income. Reference markers show the share captured by the top 10%, 20% and 50% of providers. Latest year, constant prices.</div>
+  </div>
+  </div><!-- /sub-overview -->
+
+  <!-- ── Spinout activity sub-page ── -->
+  <div class="subpanel" id="sub-spinouts">
+    <div class="cap-slot" style="margin-top:20px"></div>
+    <div class="kpis" id="spinKpis" style="margin-top:12px"></div>
+    <div class="section grid2">
+      <div class="card">
+        <div class="charthead"><h3>Spinouts and the capital behind them</h3></div>
+        <div id="chSpinTrend" class="chart"></div>
+        <div class="src">CPM-defined spinouts surviving 3+ years (bars) and total estimated external investment in active spinouts (line) — real 2024/25 prices or nominal cash, per the switch above. The dashed horizontal reference line is the all-time average of external investment (on the same real or nominal basis) across the panel's 11 years — useful for spotting years that run above or below the long-run norm. "Spinouts" here = Spin-outs with some HE provider ownership + Other spin-outs. One anomalous investment return (&gt;£20bn, single provider-year 2022/23) excluded from the investment total; it remains in provider views and exports.</div>
+      </div>
+      <div class="card">
+        <div class="charthead"><h3>Where the spinouts are</h3></div>
+        <div id="chSpinCluster" class="chart"></div>
+        <div class="src">Spinouts surviving 3+ years by cluster.</div>
+      </div>
+    </div>
+
+    <!-- Employment trends (separate chart from investment) -->
+    <div class="section card">
+      <div class="charthead"><h3>Spinout employment — total and per-provider median</h3><span class="note">FTE across CPM-defined spin-outs</span></div>
+      <div id="chSpinFte" class="chart"></div>
+      <div class="src">Total spinout employment (bars, left axis) and the median FTE per provider among those reporting any spinout employment (line, right axis). FTE sum across the two CPM spin-out categories (Spin-outs with HE ownership + Other spin-outs), active firms surviving 3+ years. Source: HESA table-4e.</div>
+    </div>
+
+    <!-- NEW: three spinout categories as separate metrics -->
+    <div class="section card">
+      <div class="charthead"><h3>Spinouts, staff and student start-ups — distinct categories</h3><span class="note">All surviving 3+ years</span></div>
+      <div id="chSpinCategories" class="chart"></div>
+      <div class="src">
+        The CPM report measures <b>Spinouts</b> as the two HESA categories with an institutional ownership link
+        (<i>Spin-outs with some HE provider ownership</i> + <i>Other spin-outs</i>). Staff start-ups and Student start-ups
+        (sometimes called "graduate start-ups") are reported alongside but conceptually different: staff retain their
+        academic post while running a company, and student start-ups emerge from the student body rather than from
+        institutional IP. All three series are counts of firms still active after three or more years.
+        Source: HESA table-4e.
+      </div>
+    </div>
+
+    <div class="section card">
+      <div class="charthead"><h3>Who attracts the investment, 2024/25</h3><span class="note">Top 15 providers · hover for spinout counts</span></div>
+      <div id="chSpinTop" class="chart tall"></div>
+      <div class="src">Estimated external investment in active spinouts, real or nominal per the switch at the top of this page; ranking follows the selected basis. Median across providers reporting any investment shown as reference line.</div>
+    </div>
+  </div>
+
+  <!-- ── 5-year growth (CAGR) sub-page ── -->
+  <div class="subpanel" id="sub-cagr">
+    <div class="section card" style="margin-top:20px">
+      <div class="charthead">
+        <h3>Five-year compound annual growth, by cluster</h3>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <select id="cagrMetric" aria-label="CAGR metric" style="min-width:240px;padding:7px 12px;font-size:13px"></select>
+          <div id="cagrSplit" role="radiogroup" aria-label="Split by business size" style="display:inline-flex;border:1.5px solid var(--purple-light);border-radius:999px;padding:2px;background:#fff">
+            <button type="button" class="split-btn active" data-split="total">Total</button>
+            <button type="button" class="split-btn" data-split="sme">SMEs</button>
+            <button type="button" class="split-btn" data-split="lc">Large business</button>
+          </div>
+        </div>
+      </div>
+      <div id="chCagr" class="chart tall"></div>
+      <p id="cagrSplitNote" class="note" style="font-size:12px;margin:6px 0 0 2px;color:#6d6478"></p>
+      <div class="src">Share of providers in each growth band, based on the compound annual growth rate (CAGR) over the latest five years (2019/20 → 2024/25), smoothing out short-term ups and downs. Providers below a minimum 2019/20 base (£100k for income measures; 10 for counts) excluded. Income measures in constant prices. Hover for provider counts.</div>
+    </div>
+    <div class="section grid2">
+      <div class="card">
+        <div class="charthead"><h3>The full distribution</h3></div>
+        <div id="chCagrDist" class="chart"></div>
+        <div class="src">Every eligible provider's five-year CAGR for the selected metric, by cluster. Box = interquartile range.</div>
+      </div>
+      <div class="card">
+        <div class="charthead"><h3>Reading this page</h3></div>
+        <p style="font-size:13.5px;color:#4c3b5c;line-height:1.6">The CAGR shows the average yearly rate at which a measure has increased or decreased over five years. <b>Significant</b> means 10%+ a year in either direction; <b>moderate</b> is 3–10%; <b>stable</b> is within ±3%. Because income is lumpy and contract-driven, smaller providers swing between bands more readily — compare with the funnel plot on the Overview sub-tab. Switch metrics above to see how growth patterns differ between income, engagement volumes and commercialisation.</p>
+      </div>
+    </div>
+
+    <!-- ── BCI decomposition ── -->
+    <div class="section card" style="margin-top:24px">
+      <div class="charthead">
+        <h3>How each stream contributed to BCI growth</h3>
+        <select id="decompGroup" aria-label="Group" style="min-width:240px;padding:7px 12px;font-size:13px"></select>
+      </div>
+      <div id="chDecompContrib" class="chart"></div>
+      <p id="decompNote" style="font-size:13px;color:#4c3b5c;line-height:1.55;margin-top:10px"></p>
+      <div class="src">Decomposed growth: each stream's contribution to the total BCI change between <span id="decompFirstYr"></span> and <span id="decompLastYr"></span>, in percentage points. Computed as (component weight in base year) × (component % change). The sum of the contributions equals the total BCI % change. Constant 2024/25 prices.</div>
+    </div>
+
+    <div class="section grid2">
+      <div class="card">
+        <div class="charthead"><h3>BCI and its components, absolute</h3></div>
+        <div id="chDecompAbs" class="chart"></div>
+        <div class="src">Total BCI (line) and the four component streams stacked beneath. £m, constant 2024/25 prices. Reflects the group selected above.</div>
+      </div>
+      <div class="card">
+        <div class="charthead"><h3>Percent change since first year (indexed)</h3></div>
+        <div id="chDecompIndexed" class="chart"></div>
+        <div class="src">Every series rebased to 100 in the first available year — easier to compare growth trajectories when component sizes differ. Values above 100 mean growth; below 100, decline.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── R&D collaboration (GtR) sub-page ── -->
+  <div class="subpanel" id="sub-gtr">
+    <div class="kpis" id="gtrKpis" style="margin-top:20px"></div>
+    <div class="section grid2">
+      <div class="card">
+        <div class="charthead"><h3>Collaboration links and who makes them</h3></div>
+        <div id="chGtrLinks" class="chart"></div>
+        <div class="src">Total R&amp;I collaboration links, unique UK businesses (left axis) and unique universities (right axis) by project start year. Source: UKRI Gateway to Research.</div>
+      </div>
+      <div class="card">
+        <div class="charthead"><h3>Mechanisms: collaborative R&amp;D vs KTP</h3></div>
+        <div id="chGtrMech" class="chart"></div>
+        <div class="src">Collaborative R&amp;D projects (incl. feasibility studies, Grant for R&amp;D, SBRI) and Knowledge Transfer Partnerships, by start year.</div>
+      </div>
+    </div>
+    <div class="section grid2">
+      <div class="card">
+        <div class="charthead"><h3>Intensity of engagement</h3></div>
+        <div id="chGtrIntensity" class="chart"></div>
+        <div class="src">Average collaborations per university (bars), per business and share of businesses partnering 2+ universities (lines, right axis).</div>
+      </div>
+      <div class="card">
+        <div class="charthead"><h3>Mean grant value per collaboration</h3></div>
+        <div id="chGtrGrant" class="chart"></div>
+        <div class="src">Mean associated grant value per collaboration by project start year, nominal. Pooled total across all years: £31.4bn over 20,302 links.</div>
+      </div>
+    </div>
+    <div class="section card">
+      <div class="charthead"><h3>The pillar at a glance</h3><span class="note">Full methodology table on the CPM framework tab</span></div>
+      <div id="gtrGlance"></div>
+    </div>
+  </div>
+  </div><!-- /trend-ri -->
+
+  <!-- ───── Skills and Talent sub-tab ───── -->
+  <div class="trendpanel" id="trend-skills">
+    <p class="lede" style="margin-top:14px">The next chapter of the monitor: how universities and businesses collaborate on people, not just projects.</p>
+    <div class="section placeholder">
+      <div class="big">🛠️</div>
+      <h3 style="margin-top:10px">In production</h3>
+      <p style="font-size:14px;color:#5d5368;max-width:640px;margin:10px auto 0">This pillar is being developed for the next release. Planned measures include degree apprenticeships co-delivered with employers, placement and internship volumes, CPD learner days, graduate retention in partner businesses, and co-designed curriculum activity. If you'd like to shape these metrics, get in touch with the NCUB research team.</p>
+    </div>
+    <div class="section grid3">
+      <div class="card"><h3>Talent pipelines</h3><p class="note" style="font-size:13px">Degree apprenticeships, placements and internships brokered between universities and employers.</p></div>
+      <div class="card"><h3>Workforce development</h3><p class="note" style="font-size:13px">CPD and continuing education delivered to business — learner days already appear in HE-BCI and will seed this pillar.</p></div>
+      <div class="card"><h3>Graduate flows</h3><p class="note" style="font-size:13px">Where graduates go: retention in collaborating firms, regional retention, and progression into R&amp;D roles.</p></div>
+    </div>
+  </div><!-- /trend-skills -->
+</section>
+
+<!-- ============ EXPLORER ============ -->
+<section class="tab" id="tab-explorer">
+  <div class="eyebrow">Tab 6</div>
+  <h2>Institution explorer</h2>
+  <p class="lede">Choose a provider to see its collaboration profile over eleven years, benchmarked against its cluster, its region and the national median.</p>
+
+  <div class="selrow">
+    <input type="search" id="uniSearch" placeholder="Search 231 providers…" aria-label="Search providers">
+    <select id="uniSelect" aria-label="Choose a provider"></select>
+  </div>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-top:14px">
+    <div class="profile" id="uniProfile" style="flex:1;min-width:240px;margin-top:0"></div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+      <button class="btn-export btn-report" id="btnReport" style="background:var(--pink);color:#fff;border-color:var(--pink);box-shadow:0 4px 14px rgba(255,0,144,.25);padding:11px 22px;font-size:14px">📄 Generate PDF report</button>
+      <p class="note" id="reportNote" style="font-size:11.5px;margin:0;display:none;text-align:right;max-width:280px"></p>
+    </div>
+  </div>
+  <div class="kpis" id="uniKpis" style="margin-top:18px"></div>
+
+  <div class="subnav" id="uniSubnav" style="margin-top:22px">
+    <button data-sub="bci" class="active">Business collaboration income</button>
+    <button data-sub="ip">Licensing &amp; spinouts</button>
+    <button data-sub="collabs">UK business collaborations</button>
+    <button data-sub="cases">Case studies</button>
+    <button data-sub="bench">Benchmarks &amp; percentiles</button>
+  </div>
+
+  <!-- ── BCI sub-page ── -->
+  <div class="subpanel show" id="usub-bci">
+    <div class="growth-strip" id="bciGrowthStrip"></div>
+    <div class="section card">
+      <div class="charthead"><h3 id="t-bci">Real business collaboration income</h3></div>
+      <div id="chUniBciTotal" class="chart"></div>
+      <div class="src">Total real BCI for this provider against cluster, region and national medians. Constant 2024/25 prices.</div>
+    </div>
+    <div class="section grid2">
+      <div class="card">
+        <div class="charthead"><h3>Who the income comes from</h3></div>
+        <div id="chUniSme" class="chart"></div>
+        <div class="src">Real BCI split between SMEs and large businesses.</div>
+      </div>
+      <div class="card">
+        <div class="charthead"><h3>Income streams</h3></div>
+        <div id="chUniMix" class="chart"></div>
+        <div class="src">Consultancy, facilities &amp; equipment, contract research and business licensing income, real terms. Business clients only (SME + large); CPD &amp; training and non-commercial clients excluded.</div>
+      </div>
+    </div>
+    <div class="section grid2">
+      <div class="card">
+        <div class="charthead"><h3>Stream composition over time</h3></div>
+        <div id="chUniStack" class="chart"></div>
+        <div class="src">100% stacked view of the four streams; shows shifts in how this provider earns business income year-on-year.</div>
+      </div>
+      <div class="card">
+        <div class="charthead"><h3>Engagement activity</h3></div>
+        <div id="chUniAct" class="chart"></div>
+        <div class="src">Interaction counts (bars, left axis) and spinouts surviving 3+ years (line, right axis).</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Licensing &amp; spinouts sub-page ── -->
+  <div class="subpanel" id="usub-ip">
+    <div class="growth-strip" id="ipGrowthStrip"></div>
+    <div class="kpis" id="ipKpis" style="margin-top:6px"></div>
+
+    <div class="section card">
+      <div class="charthead"><h3>Licensing overview</h3></div>
+      <div id="chUniLicTrend" class="chart"></div>
+      <div class="src">Real licensing income (bars, left axis) and total licences granted (line, right axis). Business clients only — non-commercial licensees excluded throughout.</div>
+    </div>
+
+    <div class="section grid2">
+      <div class="card">
+        <div class="charthead"><h3>Licensing income by business size</h3></div>
+        <div id="chUniLicSize" class="chart"></div>
+        <div class="src">Real licensing income split SMEs vs large businesses, real terms.</div>
+      </div>
+      <div class="card">
+        <div class="charthead"><h3>Licences granted by business size</h3></div>
+        <div id="chUniLicSizeN" class="chart"></div>
+        <div class="src">Number of licences granted to SMEs vs large businesses.</div>
+      </div>
+    </div>
+
+    <div class="section grid2">
+      <div class="card">
+        <div class="charthead"><h3>Software vs non-software income</h3></div>
+        <div id="chUniLicSw" class="chart"></div>
+        <div class="src">Real income split across non-software, other IP and software licensing, by business client size. Stacked bars per year — colour denotes IP type, opacity denotes business size.</div>
+      </div>
+      <div class="card">
+        <div class="charthead"><h3>Software vs non-software volumes</h3></div>
+        <div id="chUniLicSwN" class="chart"></div>
+        <div class="src">Counts of non-software and software licences granted to SMEs vs large businesses.</div>
+      </div>
+    </div>
+
+    <div class="section card">
+      <div class="charthead"><h3>From idea to licence: the IP pipeline</h3></div>
+      <div id="chUniPipeline" class="chart"></div>
+      <div class="src">Annual flows along the commercialisation pipeline: disclosures → patents filed → external patents held → patents granted → licences granted.</div>
+    </div>
+
+    <hr style="border:0;border-top:1px solid var(--grey-light);margin:30px 0 22px">
+
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:8px">
+      <h3 style="font-size:18px;color:var(--purple-dark);margin:0">Spinout activity</h3>
+      <div class="cap-slot"></div>
+    </div>
+    <div class="kpis" id="spinUKpis"></div>
+
+    <div class="section card">
+      <div class="charthead"><h3>Spinouts and capital raised</h3></div>
+      <div id="chUniSpin" class="chart"></div>
+      <div class="src">Estimated external investment in this provider's active spinouts (bars, real or nominal per the switch above) and spinouts surviving 3+ years (line). "Spinouts" = CPM definition: HE-ownership + Other spin-outs. As reported to HE-BCI; large year-to-year swings can reflect reporting-basis changes.</div>
+    </div>
+
+    <!-- NEW: employment, turnover and the three distinct start-up types -->
+    <div class="section grid2">
+      <div class="card">
+        <div class="charthead"><h3>Spinout employment and turnover</h3></div>
+        <div id="chUniSpinFte" class="chart"></div>
+        <div class="src">Headcount FTE across this provider's CPM spin-outs (bars, left axis) and estimated annual turnover of those spin-outs (line, right axis, £m nominal). Source: HESA table-4e.</div>
+      </div>
+      <div class="card">
+        <div class="charthead"><h3>Spin-outs, staff and student start-ups</h3></div>
+        <div id="chUniSpinCategories" class="chart"></div>
+        <div class="src">All three categories reported alongside each other for this provider, firms surviving 3+ years. CPM spin-outs stay the headline measure; staff and student (graduate) start-ups are reported separately per NCUB convention.</div>
+      </div>
+    </div>
+
+    <div class="section grid2">
+      <div class="card">
+        <div class="charthead"><h3>Cumulative external investment</h3></div>
+        <div id="chUniSpinCum" class="chart"></div>
+        <div class="src">Running total of estimated external investment in active spinouts. In "Compare both", the dotted line is nominal.</div>
+      </div>
+      <div class="card">
+        <div class="charthead"><h3>Investment efficiency</h3></div>
+        <div id="chUniSpinEff" class="chart"></div>
+        <div class="src">Estimated external investment per active spinout (£m, real or nominal). Higher values suggest larger ticket sizes per surviving spinout, but reporting-basis changes apply.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── UK business collaborations sub-page ── -->
+  <div class="subpanel" id="usub-collabs">
+    <div id="collabsHeader" style="background:linear-gradient(135deg,#3e1151 0%,#56156f 100%);color:#fff;border-radius:14px;padding:18px 22px;margin-top:18px"></div>
+    <div class="kpis" id="collabsKpis" style="margin-top:16px"></div>
+
+    <div class="section card">
+      <div class="charthead"><h3>Business collaborations over time</h3></div>
+      <div id="chCollabsYear" class="chart"></div>
+      <div class="src">UK-business collaboration links by project start year (bars) and associated grant value, real terms (line, right axis). Source: UKRI Gateway to Research.</div>
+    </div>
+
+    <div class="section grid2">
+      <div class="card">
+        <div class="charthead"><h3>Industry domains engaged</h3></div>
+        <div id="chCollabsDomain" class="chart"></div>
+        <div class="src">Where the partner firms operate, by NCUB-derived industry domain. Share of this provider's UK-business collaborations.</div>
+      </div>
+      <div class="card">
+        <div class="charthead"><h3>Collaboration mechanisms</h3></div>
+        <div id="chCollabsType" class="chart"></div>
+        <div class="src">The vehicle that funded each collaboration: Innovate UK collaborative R&amp;D, KTPs, research grant collaborations, fellowships with industry and beyond.</div>
+      </div>
+    </div>
+
+    <div class="section card">
+      <div class="charthead"><h3>Top 20 most active UK business partners</h3><span class="note">Ranked by number of collaborations · hover for project values</span></div>
+      <div id="chCollabsTop" class="chart tall"></div>
+      <div class="src">Each bar is one company, ranked by the number of distinct collaboration links with this provider. Bar colour shows the company's primary industry domain.</div>
+    </div>
+
+    <div class="section grid2">
+      <div class="card">
+        <div class="charthead"><h3>Funder mix</h3></div>
+        <div id="chCollabsFunder" class="chart"></div>
+        <div class="src">Which UKRI funders backed these collaborations.</div>
+      </div>
+      <div class="card">
+        <div class="charthead"><h3>Grant categories</h3></div>
+        <div id="chCollabsGrant" class="chart"></div>
+        <div class="src">Grant category breakdown — Collaborative R&amp;D, Feasibility Studies, KTP, Grant for R&amp;D, SBRI and others.</div>
+      </div>
+    </div>
+
+    <div class="section card">
+      <div class="charthead">
+        <h3>Where partners are based</h3>
+        <span class="note">Registered office postcodes from Companies House · bubble size = collaboration count</span>
+      </div>
+      <div id="chPartnerMap" class="chart tall"></div>
+      <div id="partnerMapNote" class="src"></div>
+    </div>
+
+    <p id="collabsEmpty" class="note" style="display:none;text-align:center;padding:40px;font-size:14px">No matched business-collaboration records for this provider. The Gateway to Research dataset lists 365 lead organisations; this dashboard matches 126 of them to HE-BCI providers via name fuzzy-matching. National and unmatched records appear on the headline findings tab.</p>
+  </div>
+
+  <!-- ── Case studies sub-page ── -->
+  <div class="subpanel" id="usub-cases">
+    <div id="uniCasesHeader" style="background:linear-gradient(135deg,#3e1151 0%,#56156f 100%);color:#fff;border-radius:14px;padding:18px 22px;margin-top:18px"></div>
+
+    <div class="kpis" id="uniCasesKpis" style="margin-top:16px"></div>
+
+    <div class="section grid2">
+      <div class="card">
+        <div class="charthead"><h3>Sectors this institution engages with</h3></div>
+        <div id="chUniCasesSector" class="chart short"></div>
+        <div class="src">Sector mix of case studies featuring this provider — useful for confirming where the institution's collaboration narrative concentrates.</div>
+      </div>
+      <div class="card">
+        <div class="charthead"><h3>Themes &amp; collaboration types</h3></div>
+        <div id="chUniCasesThemes" class="chart short"></div>
+        <div class="src">Which collaboration mechanisms recur in this institution's success stories.</div>
+      </div>
+    </div>
+
+    <div class="section card">
+      <div class="charthead">
+        <h3 id="uniCaseGalleryTitle">Case study library</h3>
+        <input type="search" id="uniCaseSearch" placeholder="Search this institution's stories…" style="padding:8px 14px;border-radius:10px;border:1.5px solid var(--purple-light);font-size:13px;min-width:240px">
+      </div>
+      <div id="uniCaseGallery" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;margin-top:14px"></div>
+    </div>
+
+    <p id="uniCasesEmpty" class="note" style="display:none;text-align:center;padding:40px;font-size:14px">No NCUB case studies found for this provider in the current dataset. Run <code>python fetch_case_studies.py</code> to expand coverage beyond the bundled starter, then re-run <code>python build_dashboard.py</code>.</p>
+  </div>
+
+  <!-- ── Benchmarks &amp; percentiles sub-page ── -->
+  <div class="subpanel" id="usub-bench">
+    <div class="section card">
+      <div class="charthead"><h3 id="t-bench">Benchmark against peers</h3>
+        <select id="benchMetric" aria-label="Benchmark metric" style="min-width:240px;padding:7px 12px;font-size:13px"></select>
+      </div>
+      <div id="chUniBench" class="chart"></div>
+      <div class="src">Provider value for the selected metric against the median of its cluster, its region and all UK providers. Income in constant 2024/25 prices.</div>
+    </div>
+
+    <div class="section card">
+      <div class="charthead"><h3>Where this provider sits, 2024/25</h3><span class="note">Percentile rank — 100% = highest in the comparison group</span></div>
+      <div id="uniPercentiles"></div>
+      <div class="exportrow">
+        <button class="btn-export" data-csv="institution">⬇ This institution's data (CSV)</button>
+        <button class="btn-export" data-csv="allunis">⬇ Full panel, all providers (CSV)</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CASE STUDIES ============ -->
+<section class="tab" id="tab-cases">
+  <div class="eyebrow">Tab 7</div>
+  <h2>NCUB case studies — intelligence layer</h2>
+  <p class="lede">Success stories curated by NCUB, segmented by university, business partner, sector and theme. Click any chip below to refocus the whole tab on that slice — or combine chips, charts and search to narrow further.</p>
+
+  <div class="card" id="caseChipPanel" style="margin-top:18px">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:6px">
+      <div style="font-size:13px;letter-spacing:1.5px;font-weight:800;color:var(--pink);text-transform:uppercase">Display by</div>
+      <button id="chipsClear" class="btn-export" style="display:none">Clear all filters</button>
+    </div>
+    <div class="chip-section" id="chipSectors"></div>
+    <div class="chip-section" id="chipThemes"></div>
+    <div class="chip-section" id="chipUnis"></div>
+  </div>
+
+  <div id="casesInsights" style="background:linear-gradient(135deg,#3e1151 0%,#56156f 100%);color:#fff;border-radius:14px;padding:18px 22px;margin-top:18px"></div>
+
+  <div class="section card">
+    <div class="charthead">
+      <h3>The geography of collaboration storytelling</h3>
+      <span class="note">Region of the universities featured · click a region to filter</span>
+    </div>
+    <div class="grid2" style="margin-top:14px">
+      <div>
+        <div id="chCasesGeoMap" class="chart"></div>
+      </div>
+      <div>
+        <div id="casesGeoNarrative" style="font-size:13.5px;color:#4c3b5c;line-height:1.6;padding:6px 4px"></div>
+        <div id="chCasesGeoBar" class="chart short" style="margin-top:6px"></div>
+      </div>
+    </div>
+    <div class="grid2" style="margin-top:14px">
+      <div class="card" style="background:var(--grey-bg);box-shadow:none">
+        <h3 style="font-size:14px;margin-bottom:6px">Region × sector</h3>
+        <div id="chCasesGeoSector" class="chart short"></div>
+        <div class="note" style="font-size:11.5px;margin-top:4px">Which sectors does each region most often feature in its case studies?</div>
+      </div>
+      <div class="card" style="background:var(--grey-bg);box-shadow:none">
+        <h3 style="font-size:14px;margin-bottom:6px">Region × theme</h3>
+        <div id="chCasesGeoTheme" class="chart short"></div>
+        <div class="note" style="font-size:11.5px;margin-top:4px">Which collaboration mechanisms predominate where?</div>
+      </div>
+    </div>
+    <div class="src">Source: NCUB success stories matched to HESA HE-BCI providers (231 institutions, 12 regions). Each case is attributed to the region(s) of its featured universities. National picks (no matched HE provider) are excluded from the map.</div>
+  </div>
+
+  <div class="section grid2">
+    <div class="card">
+      <div class="charthead"><h3>Universities by case study volume</h3><span class="note">Click a bar to filter the gallery</span></div>
+      <div id="chCasesUni" class="chart"></div>
+      <div class="src">Top universities featured in NCUB success stories. Patterns reveal which institutions are most visible in collaboration storytelling.</div>
+    </div>
+    <div class="card">
+      <div class="charthead"><h3>Where each university specialises</h3><span class="note">Click a cell to see those cases</span></div>
+      <div id="chCasesUniSector" class="chart"></div>
+      <div class="src">Heatmap of universities × sectors — darker cells indicate sectoral specialisms inferred from case study patterns. Click any cell to drill into the case studies for that university × sector combination.</div>
+    </div>
+  </div>
+
+  <div class="section grid2">
+    <div class="card">
+      <div class="charthead"><h3>Sectors engaged</h3><span class="note">Click a slice to filter</span></div>
+      <div id="chCasesSector" class="chart"></div>
+      <div class="src">Distribution of case studies across NCUB sector taxonomy. Click any sector to see the case studies behind it.</div>
+    </div>
+    <div class="card">
+      <div class="charthead"><h3>Themes &amp; collaboration types</h3><span class="note">Click a theme to filter</span></div>
+      <div id="chCasesThemes" class="chart"></div>
+      <div class="src">Topic tags from the case study text — collaboration mechanisms surfaced most often. Click any theme to see the cases tagged with it.</div>
+    </div>
+  </div>
+
+  <div class="section card">
+    <div class="charthead">
+      <h3 id="caseGalleryTitle">Case study gallery</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input type="search" id="caseSearch" placeholder="Search title, university, partner…" style="padding:8px 14px;border-radius:10px;border:1.5px solid var(--purple-light);font-size:13px;min-width:240px">
+        <select id="caseSectorFilter" style="padding:8px 12px;border-radius:10px;border:1.5px solid var(--purple-light);font-size:13px"><option value="">All sectors</option></select>
+        <select id="caseThemeFilter" style="padding:8px 12px;border-radius:10px;border:1.5px solid var(--purple-light);font-size:13px"><option value="">All themes</option></select>
+        <select id="caseUniFilter" style="padding:8px 12px;border-radius:10px;border:1.5px solid var(--purple-light);font-size:13px"><option value="">All universities</option></select>
+      </div>
+    </div>
+    <div id="caseActiveFilters" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"></div>
+    <div id="caseGallery" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;margin-top:14px"></div>
+    <div class="exportrow"><button class="btn-export" data-csv="cases">⬇ Case study index (CSV)</button></div>
+  </div>
+
+  <div class="section card" id="casesEnrich" style="display:none">
+    <h3>Want the full set?</h3>
+    <p style="font-size:14px;color:#5d5368">This view shows the bundled starter dataset of NCUB success stories. To pull the full corpus (~hundreds of case studies) from <a href="https://www.ncub.co.uk/insights/?_sft_type=success-story" target="_blank" rel="noopener" style="color:var(--pink)">ncub.co.uk/insights</a>, run:</p>
+    <pre style="background:var(--grey-bg);padding:14px;border-radius:8px;font-size:12.5px;margin-top:10px;overflow-x:auto">pip install requests beautifulsoup4
+python fetch_case_studies.py</pre>
+    <p style="font-size:13px;color:#5d5368;margin-top:10px">The scraper writes <code>case_studies.json</code> (picked up automatically by the build) plus <code>case_study_review.csv</code> for hand-correcting any rows where heuristic extraction missed the university or business partner. See the README for full instructions.</p>
+  </div>
+</section>
+
+<footer>
+  NCUB Collaboration Progress Monitor · Data: HESA HE-BCI panel 2014/15–2024/25 (231 providers) · Income in constant 2024/25 prices (CPI-deflated) ·
+  Builds on <em>State of the Relationship 2025</em>, Chapter 1 · Context charts digitised from NCUB (2025) figures based on ONS, OECD and HESA.
+</footer>
+</main>
