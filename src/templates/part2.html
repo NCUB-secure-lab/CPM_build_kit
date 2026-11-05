@@ -288,7 +288,7 @@
       <div class="seg multi" id="plBench"><button data-v="uk" class="active">UK</button><button data-v="eng" class="active">England</button></div></div>
     <div class="pl-field"><label for="plAdd">Add places to compare</label><select id="plAdd"></select></div>
     <div class="pl-field"><label>Show money and counts</label>
-      <div class="seg" id="plScale"><button data-v="per" class="active">Per university</button><button data-v="tot">Total</button></div></div>
+      <div class="seg" id="plScale"><button data-v="per" class="active">Per university</button><button data-v="med">Median university</button><button data-v="tot">Total</button></div></div>
     <div class="pl-field"><label>Universities</label>
       <div class="seg" id="plSet"><button data-v="all" class="active">All providers</button><button data-v="core">Core 136 (stable set)</button></div></div>
   </div>
@@ -467,7 +467,7 @@
 
   <div class="chapter"><div class="chap-n">5</div><h3 class="chap-h">Which kinds of university drive it?</h3></div>
   <div class="story" id="plStory5"></div>
-  <div class="section grid2">
+  <div class="section">
   <div class="section card">
     <div class="charthead"><h3>Growth by type of university</h3><span class="note"></span></div>
     <div id="chPlTypesNat" class="chart"></div>
@@ -495,6 +495,11 @@
 
   <div class="chapter"><div class="chap-n">7</div><h3 class="chap-h">What is the local economy like?</h3></div>
   <div class="story" id="plStory7"></div>
+  <div class="section card">
+    <div class="charthead"><h3>Collaboration income and the knowledge economy, by type of university</h3><span class="note">Each dot is a university</span></div>
+    <div id="chPlScatter" class="chart tall"></div>
+    <div class="src"><span id="plScatterSrc"></span></div>
+  </div>
   <div class="section card">
     <div class="charthead"><h3>The local economy</h3><span class="note" id="plEcoNote"></span></div>
     <div id="plEco"></div>

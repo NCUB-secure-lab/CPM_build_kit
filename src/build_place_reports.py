@@ -572,27 +572,41 @@ def build_area_deck(D, lvl, area, path):
     ch.plots[0].gap_width = 40
     for i, (_, c) in enumerate(BANDS):
         ch.series[i].format.fill.solid(); ch.series[i].format.fill.fore_color.rgb = rgb(c)
-    # scatter: BCI per local job vs knowledge-intensive share
-    tt_b = D.latest("ttwa", "bci")
-    ctx = D.ttwa_ctx
-    pts = [(n, float(ctx.loc[n, "ttwa_ki_share"]) * 100, float(tt_b[n]) * 1000 / float(ctx.loc[n, "ttwa_jobs_bres2024"])) for n in tt_b.index
-           if n in ctx.index and tt_b[n] > 0 and pd.notna(ctx.loc[n, "ttwa_ki_share"]) and pd.notna(ctx.loc[n, "ttwa_jobs_bres2024"]) and ctx.loc[n, "ttwa_jobs_bres2024"] > 0]
-    mine = set(D.d[(D.d[colr] == area)]["a_ttwa"].dropna()) if lvl != "ttwa" else {area}
-    if pts:
-        xs = XyChartData()
-        so = xs.add_series("Other travel-to-work areas")
-        for n, x_, y_ in pts:
-            if n not in mine: so.add_data_point(x_, y_)
-        sm = xs.add_series(area)
-        for n, x_, y_ in pts:
-            if n in mine: sm.add_data_point(x_, y_)
-        s = deck.body("Part 2 · Local economy", "Collaboration income and the knowledge economy", f"BCI per local job (£) against knowledge-intensive employment (%), {y}",
-                      panel=(str(len(pts)), "travel-to-work areas with a university", f"{area} is shown in pink" + ("" if any(n in mine for n, *_ in pts) else " (it has no travel-to-work-area data)") + ". Income is recorded where the university is based."))
+    # scatter: university BCI per local job vs knowledge-intensive share, by type of university
+    CL = ["Anchored research-intensive", "Contract-research growers", "SME & locally embedded growers", "Contracting collaborators", "Regeneration-exposed, eroding", "Other / not clustered"]
+    CLC = [PUR, PNK, "0085CA", "00B388", "E8A600", "B8B0C9"]
+    pp_ = D.d[D.d.academic_year == y].copy()
+    pp_ = pp_[pp_.ttwa_ki_share.notna() & (pp_.ttwa_jobs_bres2024 > 0) & (pp_.m_bci > 0)]
+    pp_["xk"] = pp_.ttwa_ki_share * 100
+    pp_["yk"] = pp_.m_bci * 1000 / pp_.ttwa_jobs_bres2024
+    def cl_i(c):
+        if isinstance(c, str):
+            for i, n in enumerate(CL[:5]):
+                if c.startswith(n): return i
+        return 5
+    pp_["cli"] = pp_.cluster.map(cl_i)
+    mine_u = set(D.d[D.d[colr] == area].ukprn)
+    pp_["mine"] = pp_.ukprn.isin(mine_u)
+    if len(pp_):
+        xs = XyChartData(); names, cols = [], []
+        for i, n in enumerate(CL):
+            g_ = pp_[(pp_.cli == i) & ~pp_.mine]
+            if len(g_):
+                sr = xs.add_series(n)
+                for r in g_.itertuples(): sr.add_data_point(float(r.xk), float(r.yk))
+                cols.append(CLC[i])
+        gm = pp_[pp_.mine]
+        sm = xs.add_series(f"{area} universities")
+        for r in gm.itertuples(): sm.add_data_point(float(r.xk), float(r.yk))
+        cols.append("FF0090")
+        s = deck.body("Part 2 · Local economy", "Collaboration income and the knowledge economy, by type of university", f"University BCI per local job (£) against knowledge-intensive employment in its area (%), {y}",
+                      panel=(str(len(pp_)), "universities plotted", f"Coloured by university type; {area} universities in pink" + ("" if len(gm) else " (none with area data)") + ". Income is recorded where the university is based."))
         gf = s.shapes.add_chart(XL_CHART_TYPE.XY_SCATTER, *[Emu(v) for v in CH], xs)
-        ch = gf.chart; style_chart(ch, legend=True)
+        ch = gf.chart; style_chart(ch, legend=True, size=9)
         ch.value_axis.major_gridlines.format.line.color.rgb = rgb("EEEBF1")
-        for sr, c, sz in zip(ch.plots[0].series, ["B8B0C9", PNK], [7, 13]):
-            sr.marker.size = sz; sr.marker.format.fill.solid(); sr.marker.format.fill.fore_color.rgb = rgb(c)
+        for sr, c in zip(ch.plots[0].series, cols):
+            sr.marker.size = 9 if c != "FF0090" else 13
+            sr.marker.format.fill.solid(); sr.marker.format.fill.fore_color.rgb = rgb(c)
             sr.format.line.fill.background()
 
     # 4 universities
