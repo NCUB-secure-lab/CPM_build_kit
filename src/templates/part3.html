@@ -368,7 +368,7 @@ function drawPareto(){
 
 /* ---------- findings sub-tabs ---------- */
 const subRendered={overview:true};
-const subRenderers={spinouts:renderSpinouts,cagr:renderCagr,gtr:renderGtr};
+const subRenderers={spinouts:renderSpinouts,cagr:renderCagr,gtr:renderGtr,place:renderPlace};
 function initSubnav(){
   document.getElementById('findSubnav').addEventListener('click',e=>{
     const b=e.target.closest('button'); if(!b) return;
@@ -1839,6 +1839,7 @@ function addTrendsXlsButtons(){
 }
 addTrendsXlsButtons();
 
+/*__PLACE_JS__*/
 /* boot */
 renderHome();
 

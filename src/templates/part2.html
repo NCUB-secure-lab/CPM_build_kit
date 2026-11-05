@@ -17,6 +17,7 @@
     <button data-sub="spinouts">Spinout activity</button>
     <button data-sub="cagr">Growth analysis</button>
     <button data-sub="gtr">R&amp;D collaboration</button>
+    <button data-sub="place">Place</button>
   </div>
 
   <div class="subpanel show" id="sub-overview">
@@ -253,6 +254,104 @@
       <div id="gtrGlance"></div>
     </div>
   </div>
+
+  <!-- ── Place (ITL1 / ITL2 / TTWA) sub-page ── -->
+  <div class="subpanel" id="sub-place">
+    <p class="lede" style="margin-top:18px">Where university–business collaboration happens. Every university is placed at its <b>main campus</b>; income is therefore recorded where the university is based, not where partners are located. Choose a geography, an indicator and a year, then click any bar, bubble or region to compare areas.</p>
+
+    <div class="placebar card" id="placeBar">
+      <div class="pl-field"><label>Geography</label>
+        <div class="seg" id="plLevel">
+          <button data-v="itl1" class="active">ITL1 regions</button><button data-v="itl2">ITL2 sub-regions</button><button data-v="ttwa">Travel-to-work areas</button>
+        </div></div>
+      <div class="pl-field"><label for="plMetric">Indicator</label><select id="plMetric"></select></div>
+      <div class="pl-field"><label for="plYear">Year</label><select id="plYear"></select></div>
+      <div class="pl-field"><label>Universities</label>
+        <div class="seg" id="plSet"><button data-v="all" class="active">All providers</button><button data-v="core">Core 136 (stable set)</button></div></div>
+      <div class="pl-field" id="plRegWrap"><label for="plReg">Within region</label><select id="plReg"></select></div>
+    </div>
+
+    <div class="kpis" id="plKpis" style="margin-top:16px"></div>
+    <div class="insights" id="plInsights"></div>
+
+    <div class="section grid2">
+      <div class="card">
+        <div class="charthead"><h3 id="plMapTitle">Map</h3><span class="note">Click a region or bubble to select</span></div>
+        <div id="chPlMap" class="chart tall"></div>
+        <div class="src">Bubble position = BCI-weighted centroid of the main campuses in each area. Source: HE-BCI via NCUB master panel; ONS ITL / TTWA geographies.</div>
+      </div>
+      <div class="card">
+        <div class="charthead"><h3 id="plRankTitle">Ranking</h3><span class="note" id="plRankNote">Click a bar to select</span></div>
+        <div class="pl-inline"><label for="plTopN">Show</label><select id="plTopN"><option value="15">Top 15</option><option value="30">Top 30</option><option value="999">All</option></select></div>
+        <div id="chPlRank" class="chart tall"></div>
+        <div class="src" id="plRankSrc"></div>
+      </div>
+    </div>
+
+    <div class="section card">
+      <div class="charthead"><h3>Compare selected areas over time</h3><span class="note">Selected areas appear as chips; click ✕ to drop one</span></div>
+      <div class="pl-chips" id="plChips"></div>
+      <div class="pl-inline"><div class="seg" id="plTrendMode"><button data-v="abs" class="active">Levels</button><button data-v="idx">Indexed (first year = 100)</button></div></div>
+      <div id="chPlTrend" class="chart tall"></div>
+      <div class="src">All years in the panel, 2014/15 to 2024/25; real 2024/25 prices. With "All providers", growth includes providers entering the panel; use "Core 136" for a stable set.</div>
+    </div>
+
+    <div class="section grid2">
+      <div class="card">
+        <div class="charthead"><h3>Punching above (or below) academic weight</h3><span class="note">Share of UK BCI vs share of UK academic staff</span></div>
+        <div id="chPlShare" class="chart"></div>
+        <div class="src">Location quotient = area's share of UK BCI ÷ its share of UK academic staff (headcount). Above 1 means more collaboration income than academic size alone would predict.</div>
+      </div>
+      <div class="card">
+        <div class="charthead"><h3>Concentration</h3><span class="note">Cumulative share of the UK total</span></div>
+        <div id="chPlConc" class="chart"></div>
+        <div class="src" id="plConcSrc"></div>
+      </div>
+    </div>
+
+    <div class="section grid2">
+      <div class="card">
+        <div class="charthead"><h3>What the money is for</h3><span class="note">Mix of BCI, selected areas vs UK</span></div>
+        <div id="chPlMix" class="chart"></div>
+        <div class="src">Contract research, consultancy, facilities &amp; equipment and IP income with SMEs and large businesses (BCI definition excludes CPD).</div>
+      </div>
+      <div class="card">
+        <div class="charthead"><h3>Who it is with</h3><span class="note">SME share of BCI, selected areas vs UK</span></div>
+        <div id="chPlSme" class="chart"></div>
+        <div class="src">SME share of business collaboration income, 2014/15 to 2024/25.</div>
+      </div>
+    </div>
+
+    <div class="section card">
+      <div class="charthead"><h3>Place and local economy</h3><span class="note">Each bubble is a travel-to-work area with a university</span></div>
+      <div class="pl-inline"><label for="plCtxX">Local-economy measure</label><select id="plCtxX"></select>
+        <label for="plCtxY" style="margin-left:14px">Collaboration measure</label><select id="plCtxY"></select></div>
+      <div id="chPlCtx" class="chart tall"></div>
+      <div class="src">Bubble size = BCI. Local-economy measures from ONS (GVA per filled job, 2023), BRES 2024 and ONS BERD 2024; typology from NCUB TTWA analysis (02_ttwa_typology). Selected areas are outlined.</div>
+    </div>
+
+    <div class="section grid2">
+      <div class="card">
+        <div class="charthead"><h3>Types of local economy</h3><span class="note">Share of BCI vs share of jobs</span></div>
+        <div id="chPlType" class="chart"></div>
+        <div class="src">TTWAs grouped by NCUB five-way typology. Jobs: BRES 2024 employee jobs in TTWAs that host a university.</div>
+      </div>
+      <div class="card">
+        <div class="charthead"><h3 id="plProfTitle">Area profile</h3><span class="note" id="plProfNote"></span></div>
+        <div id="plProfile"></div>
+      </div>
+    </div>
+
+    <div class="section card" id="plReports">
+      <div class="charthead"><h3>Editable PowerPoint report</h3></div>
+      <p style="margin:6px 0 12px;font-size:14px;color:var(--purple-mid)">Download an NCUB-styled, fully editable deck for the area in focus (first chip) or for the UK overview. Charts are native PowerPoint charts, so numbers, colours and text can all be changed after download.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn-xls" id="plPptArea" type="button" style="margin-left:0;font-size:13px;padding:8px 16px">⬇ PowerPoint: selected area</button>
+        <button class="btn-xls" id="plPptUk" type="button" style="margin-left:0;font-size:13px;padding:8px 16px">⬇ PowerPoint: UK place overview</button>
+      </div>
+      <p class="src" style="margin-top:10px">Pre-built decks for every ITL1, ITL2 and TTWA are also supplied in the <code>output/place_reports/</code> folder of the build kit.</p>
+    </div>
+  </div><!-- /sub-place -->
   </div><!-- /trend-ri -->
 
   <!-- ───── Skills and Talent sub-tab ───── -->

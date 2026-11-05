@@ -467,7 +467,19 @@ if os.path.exists(cases_path):
 else:
     print(f"  Case studies: none loaded (no {os.path.basename(cases_path)})")
 
-data = {"years": years, "unis": unis, "national": national,
+# ── Place layer (ITL1 / ITL2 / TTWA) from input/master_panel.xlsx ──
+place = None
+try:
+    import place_data
+    if os.path.exists(place_data.PANEL_PATH):
+        place = place_data.build_place()
+        print(f"Place layer: {len(place['provs'])} providers, {len(place['ttwa'])} TTWAs, {len(place['itl2'])} ITL2")
+    else:
+        print("master_panel.xlsx not found – Place tab will be empty")
+except Exception as e:
+    print("Place layer skipped:", e)
+
+data = {"place": place, "years": years, "unis": unis, "national": national,
         "clusterMed": cluster_med, "regionMed": region_med, "natMed": nat_med,
         "clusterAgg": cluster_agg,
         "growth": growth, "regionAgg": regionAgg, "geo": geo, "ctx": ctx,
@@ -483,6 +495,13 @@ for part in ("part1.html", "part2.html", "part3.html"):
     with open(os.path.join(HERE, "templates", part), encoding="utf-8") as f:
         tpl += f.read()
 
+def _read(p):
+    with open(os.path.join(HERE, "templates", p), encoding="utf-8") as f:
+        return f.read()
+_logo_c = _read("logo_c.b64").strip() if os.path.exists(os.path.join(HERE, "templates", "logo_c.b64")) else ""
+_logo_w = _read("logo_w.b64").strip() if os.path.exists(os.path.join(HERE, "templates", "logo_w.b64")) else ""
+place_js = _read("place.js").replace("__PL_LOGO__", _logo_c).replace("__PL_LOGO_W__", _logo_w)
+tpl = tpl.replace("/*__PLACE_JS__*/", place_js)
 html = tpl.replace("__DATA__", json.dumps(data, separators=(",", ":")))
 with open(OUT_PATH, "w", encoding="utf-8") as f:
     f.write(html)

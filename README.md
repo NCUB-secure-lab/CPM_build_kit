@@ -7,7 +7,8 @@ Everything needed to regenerate the dashboard from the HESA panel data.
 ```
 CPM_build_kit/
 ├── input/              ← all raw and reference data (never written to)
-│   ├── hesa_panel_clean.csv     HE-BCI panel, 231 providers, 2014/15–2024/25
+│   ├── CPM_master.xlsx          HE-BCI panel, 231 providers, 2014/15–2024/25
+│   ├── master_panel.xlsx        panel with campus ITL2 / TTWA / local-economy fields
 │   ├── business_collabs.csv     Gateway to Research business collaborations
 │   ├── ri_indicators.csv        GtR R&I pillar indicators (13 measures)
 │   ├── ri_trends_full.csv       GtR trends time-series
@@ -21,6 +22,8 @@ CPM_build_kit/
 │   ├── case_match_audit.csv     case-study ↔ HESA matching audit
 │   └── case_study_review.csv    scraper quality audit
 ├── src/                ← Python code and HTML templates
+│   ├── place_data.py            geography layer (ITL1/ITL2/TTWA) from master_panel.xlsx
+│   ├── build_place_reports.py   editable PowerPoint place reports
 │   ├── build_dashboard.py       main build script (reads input/, writes output/)
 │   ├── build_collabs.py         GtR business collab aggregator
 │   ├── match_cases.py           fuzzy case-study → HESA matcher
@@ -54,14 +57,26 @@ Custom input/output paths still work for one-off runs:
 python src/build_dashboard.py /path/to/new_panel.csv /path/to/dashboard.html
 ```
 
-## Known data corrections
+## Data sources
 
-**Spinouts (fixed Oct 2026, flagged for upstream repair):** the raw
-`n_spinouts_surv3` column in `hesa_panel_clean.csv` is systematically 4× the
-HE-BCI published figures. The build script applies a `/4` correction before
-anything else uses the field, so dashboard numbers match the published
-Cambridge/Oxford/UCL totals. When the upstream panel is regenerated from a
-clean source, remove the `SPIN_CORRECTION` constant in `build_dashboard.py`.
+- `input/CPM_master.xlsx` – HE-BCI provider panel (main dashboard data). Spin-outs follow the CPM
+  definition (HE-owned + other spin-outs, 3+ years surviving), cross-checked against `table-4e.csv`.
+- `input/master_panel.xlsx` – university × year panel with campus ITL2, TTWA and local-economy
+  typology (real 2024/25 prices, £000). Powers the **Place** sub-tab
+  (Trends → Research and Innovation → Place) and the PowerPoint reports.
+- `input/NCUB_guide_presentations.pptx` – NCUB slide template used for the reports.
+
+## Place reports (editable PowerPoint)
+
+```bash
+python src/build_place_reports.py              # UK overview + every ITL1, ITL2 and TTWA
+python src/build_place_reports.py --only itl1  # or: uk | itl2 | ttwa
+```
+
+Writes `output/place_reports/`. Charts are native PowerPoint charts (right-click → Edit data).
+The dashboard's Place tab also offers an in-browser PowerPoint download for any selected area.
+Note: income is recorded at each university's main campus, not where its partners are located.
+ITL2 names follow the ONS ITL list; check `ITL2_NAMES` in `src/place_data.py` if boundaries change.
 
 No local Python? It also runs in **Google Colab** (upload the kit, run the
 script, download the HTML) or any Jupyter environment.
