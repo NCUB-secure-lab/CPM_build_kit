@@ -276,7 +276,7 @@
 <section class="tab" id="tab-place">
   <div class="eyebrow">Tab 5</div>
   <h2>Place explorer</h2>
-  <p class="lede">Pick a place and see how university–business collaboration there has changed, set against England, the UK or places you choose. Every university is located at its <b>main campus</b>, so income is recorded where the university is based, not where its partners are. Income and activity are shown <b>per university</b> by default, so places with many providers can be compared fairly with places with few.</p>
+  <p class="lede">Pick a place and follow the story of university–business collaboration there: from the business R&amp;D backdrop, through how collaboration is doing against its own history and against other places, to what it produces. Universities are located at their <b>main campus</b>, so income is recorded where the university is based, not where its partners are. Money and activity are shown <b>per university</b> by default and in real 2024/25 prices.</p>
 
   <div class="placebar card" id="placeBar">
     <div class="pl-field"><label>Geography</label>
@@ -287,18 +287,14 @@
     <div class="pl-field"><label>Compare with</label>
       <div class="seg multi" id="plBench"><button data-v="uk" class="active">UK</button><button data-v="eng" class="active">England</button></div></div>
     <div class="pl-field"><label for="plAdd">Add places to compare</label><select id="plAdd"></select></div>
-    <div class="pl-field"><label>Show income</label>
+    <div class="pl-field"><label>Show money and counts</label>
       <div class="seg" id="plScale"><button data-v="per" class="active">Per university</button><button data-v="tot">Total</button></div></div>
     <div class="pl-field"><label>Universities</label>
       <div class="seg" id="plSet"><button data-v="all" class="active">All providers</button><button data-v="core">Core 136 (stable set)</button></div></div>
   </div>
   <div class="pl-chips" id="plChips" style="margin-top:10px"></div>
 
-  <div class="kpis" id="plKpis" style="margin-top:8px"></div>
-  <h3 class="pl-h" id="plInsHead">What stands out</h3>
-  <div class="insights" id="plInsights"></div>
-
-  <div class="section grid2">
+  <div class="section grid2" style="margin-top:14px">
     <div class="card">
       <div class="charthead"><h3>Where is it?</h3><span class="note">Click a place to switch to it</span></div>
       <div id="chPlMap" class="chart tall"></div>
@@ -306,47 +302,117 @@
     </div>
     <div class="card">
       <div class="charthead"><h3 id="plProfTitle">Universities in this place</h3><span class="note" id="plProfNote"></span></div>
+      <div class="kpis" id="plKpis" style="margin:6px 0 10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))"></div>
       <div id="plProfile"></div>
     </div>
   </div>
 
+  <div class="chapter"><div class="chap-n">1</div><h3 class="chap-h">What is happening to business R&amp;D?</h3></div>
+  <div class="story" id="plStory1"></div>
   <div class="section card">
-    <div class="charthead"><h3>Business collaboration income</h3><span class="note" id="plScaleNote"></span></div>
-    <div id="chPlBci" class="chart tall"></div>
-    <div class="src">BCI = contract research + consultancy + facilities &amp; equipment + IP income from SMEs and large businesses (excludes CPD). Real 2024/25 prices. Dashed lines are comparators.</div>
-  </div>
-  <div class="section card">
-    <div class="charthead"><h3>Growth since the start of the series</h3><span class="note">Total BCI, first year = 100</span></div>
-    <div id="chPlIdx" class="chart"></div>
-    <div class="src">Indexed so places of different size can be compared. With "All providers" the index also reflects providers entering the panel; "Core 136" holds the provider set steady.</div>
-  </div>
-  <div class="section card">
-    <div class="charthead"><h3>What the income is for</h3><span class="note">The four BCI streams</span></div>
-    <div id="chPlStreams" class="chart tall"></div>
-    <div class="src">Contract research, consultancy, facilities &amp; equipment and IP licensing income with businesses.</div>
+    <div class="charthead"><h3>Business expenditure on R&amp;D over time</h3><span class="note"><span id="plBerdTrendNote"></span></span></div>
+    <div id="chBerdTrend" class="chart"></div>
+    <div class="src"></div>
   </div>
   <div class="section grid2">
-    <div class="card">
-      <div class="charthead"><h3>Mix of income, latest year</h3></div>
-      <div id="chPlMix" class="chart"></div>
-      <div class="src" id="plMixSrc"></div>
-    </div>
-    <div class="card">
-      <div class="charthead"><h3>Who it is with</h3><span class="note">SMEs and large businesses</span></div>
-      <div id="chPlSme" class="chart"></div>
-      <div class="src">SME and large-business BCI (left) and SME share of BCI (right).</div>
-    </div>
+  <div class="section card">
+    <div class="charthead"><h3>Which industries are driving it?</h3><span class="note"></span></div>
+    <div id="chBerdInd" class="chart"></div>
+    <div class="src"><span id="plBerdIndSrc"></span></div>
   </div>
   <div class="section card">
-    <div class="charthead"><h3>Beyond contracts: CPD, collaborative research and partners</h3></div>
-    <div id="chPlCollab" class="chart tall"></div>
-    <div class="src">CPD / continuing education income; publicly funded collaborative research (total value); and the share of that research funded by partner cash and in-kind contributions.</div>
+    <div class="charthead"><h3>How does business R&amp;D growth here compare?</h3><span class="note"></span></div><div class="pl-inline" id="plBerdBaseWrap"><label for="plBerdBase">Growth since</label><select id="plBerdBase"></select></div>
+    <div id="chBerdGrow" class="chart"></div>
+    <div class="src"><span id="plBerdGrowSrc"></span></div>
+  </div>
+  </div>
+
+  <div class="chapter"><div class="chap-n">2</div><h3 class="chap-h">How is collaboration here doing against its own history?</h3></div>
+  <div class="story" id="plStory2"></div>
+  <div class="section card">
+    <div class="charthead"><h3>The CPM indicators for this place</h3><span class="note" id="plCpmNote"></span></div>
+    <div style="overflow:auto"><table class="cpm" id="plCpm"></table></div>
+    <div class="src">Latest year against the previous year (YoY), the average of the previous five years (short term), the average of the previous ten years (long term) and 2018/19 (pre-Covid). ⏫ ≥10% above · ⌃ 1–10% above · — within ±1% · ⌄ 1–10% below · ⏬ ≥10% below. Same indicators and thresholds as the national scorecard.</div>
   </div>
   <div class="section card">
-    <div class="charthead"><h3>Spin-outs, staff and intensity</h3></div>
-    <div id="chPlSpin" class="chart tall"></div>
-    <div class="src">Surviving spin-outs (3+ years, CPM definition: HE-owned plus other spin-outs); academic staff headcount; BCI per academic; BCI as a share of total university income.</div>
+    <div class="charthead"><h3>How many indicators are above, at or below their own average?</h3><span class="note"></span></div>
+    <div id="chPlAbove" class="chart"></div>
+    <div class="src">Counts of the nine CPM indicators, by comparison. "At" means within ±1%.</div>
   </div>
+  <div class="section card">
+    <div class="charthead"><h3>Business collaboration income over time</h3><span class="note"><span id="plScaleNote"></span></span></div>
+    <div id="chPlBci" class="chart tall"></div>
+    <div class="src">BCI = contract research + consultancy + facilities &amp; equipment + IP income from SMEs and large businesses (excludes CPD). Real 2024/25 prices. Dashed lines are benchmarks.</div>
+  </div>
+
+  <div class="chapter"><div class="chap-n">3</div><h3 class="chap-h">Where does the income come from, and who pays for it?</h3></div>
+  <div class="story" id="plStory3"></div>
+  <div class="section card">
+    <div class="charthead"><h3>Collaboration income by type, SMEs and large businesses</h3><span class="note"></span></div>
+    <div id="chPlTypes" class="chart tall"></div>
+    <div class="src">Contract research, consultancy, facilities &amp; equipment and IP income, split by size of business. Solid = this place; dotted = UK benchmark where switched on.</div>
+  </div>
+  <div class="section grid2">
+  <div class="section card">
+    <div class="charthead"><h3>Mix of income, latest year</h3><span class="note"></span></div>
+    <div id="chPlMix" class="chart"></div>
+    <div class="src"><span id="plMixSrc"></span></div>
+  </div>
+  <div class="section card">
+    <div class="charthead"><h3>SME share of income</h3><span class="note"></span></div>
+    <div id="chPlSme" class="chart"></div>
+    <div class="src">SME share of BCI.</div>
+  </div>
+  </div>
+
+  <div class="chapter"><div class="chap-n">4</div><h3 class="chap-h">Is it growing faster than elsewhere?</h3></div>
+  <div class="story" id="plStory4"></div>
+  <div class="section card">
+    <div class="charthead"><h3>Five-year compound annual growth of collaboration income, all places</h3><span class="note"></span></div><div class="pl-inline"><div class="seg" id="plCagrSeg"><button data-v="bci" class="active">Total</button><button data-v="sme">SMEs</button><button data-v="lc">Large business</button></div></div>
+    <div id="chPlCagr" class="chart tall"></div>
+    <div class="src"><span id="plCagrSrc"></span></div>
+  </div>
+  <div class="section card">
+    <div class="charthead"><h3>Growth since the start of the series</h3><span class="note"></span></div>
+    <div id="chPlIdx" class="chart"></div>
+    <div class="src">Total BCI indexed, first year = 100. With "All providers" the index also reflects providers entering the panel.</div>
+  </div>
+
+  <div class="chapter"><div class="chap-n">5</div><h3 class="chap-h">Which kinds of university drive it?</h3></div>
+  <div class="story" id="plStory5"></div>
+  <div class="section grid2">
+  <div class="section card">
+    <div class="charthead"><h3>Growth by type of university</h3><span class="note"></span></div>
+    <div id="chPlTypesNat" class="chart"></div>
+    <div class="src"><span id="plTypesSrc"></span></div>
+  </div>
+  <div class="section card">
+    <div class="charthead"><h3>Income by type of university in this place</h3><span class="note"></span></div>
+    <div id="chPlClusterArea" class="chart"></div>
+    <div class="src">Universities grouped by BCI portfolio type (NCUB cluster analysis).</div>
+  </div>
+  </div>
+
+  <div class="chapter"><div class="chap-n">6</div><h3 class="chap-h">What does collaboration produce?</h3></div>
+  <div class="story" id="plStory6"></div>
+  <div class="section card">
+    <div class="charthead"><h3>IP licensing income and licences granted</h3><span class="note"></span></div>
+    <div id="chPlIp" class="chart tall"></div>
+    <div class="src">Licensing income by size of business (real 2024/25 prices) and licences granted. Dashed line = all-time average income.</div>
+  </div>
+  <div class="section card">
+    <div class="charthead"><h3>Patents</h3><span class="note"></span></div>
+    <div id="chPlPatents" class="chart tall"></div>
+    <div class="src">Patents filed, granted and filed by external parties with a university co-applicant.</div>
+  </div>
+  <div class="section card">
+    <div class="charthead"><h3>Spin-outs</h3><span class="note"></span></div>
+    <div id="chPlSpin" class="chart"></div>
+    <div class="src">Surviving spin-outs (3+ years, CPM definition: HE-owned plus other spin-outs) and academic staff.</div>
+  </div>
+
+  <div class="chapter"><div class="chap-n">7</div><h3 class="chap-h">What is the local economy like?</h3></div>
+  <div class="story" id="plStory7"></div>
   <div class="section card">
     <div class="charthead"><h3>The local economy</h3><span class="note" id="plEcoNote"></span></div>
     <div id="plEco"></div>
@@ -354,7 +420,7 @@
 
   <div class="section card" id="plReports">
     <div class="charthead"><h3>Report on this place</h3></div>
-    <p style="margin:6px 0 12px;font-size:14px;color:var(--purple-mid)">Download an editable PowerPoint report on the place picked above, in NCUB style: key findings, comparison with the benchmarks you selected, trends, mix, universities and local economy. Charts are native PowerPoint charts, so numbers, colours and text can be changed after download.</p>
+    <p style="margin:6px 0 12px;font-size:14px;color:var(--purple-mid)">Download an editable PowerPoint report on the place picked above, in NCUB style: the story in this tab with the benchmarks you selected. Charts are native PowerPoint charts, so numbers, colours and text can be changed after download.</p>
     <button class="btn-xls" id="plPptArea" type="button" style="margin-left:0;font-size:13px;padding:8px 16px">⬇ PowerPoint report</button>
     <span id="plPptMsg" style="font-size:12.5px;color:var(--purple-mid);margin-left:10px"></span>
   </div>

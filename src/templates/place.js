@@ -66,6 +66,29 @@ function plCagr(arr,y,n){if(y<n) return null; const a=arr[y-n],b=arr[y]; return 
 const plBciSeries=e=>PY.map((_,y)=>plAmt(e,'bci',y));
 const plUnit=()=>PS.scale==='per'?'per university':'total';
 
+/* ---------- extra helpers ---------- */
+const PL_IND=[
+  ['Collaboration activity',[['SME interactions','nsme','n1'],['Large business interactions','nlc','n1']]],
+  ['Investment in collaboration',[['Business collaboration income','bci','gbp'],['BCI from SMEs','sme','gbp'],['BCI from large business','lc','gbp'],['UK industry funds in HE R&D','ukind','gbp']]],
+  ['Products of collaboration',[['Licences granted','licn','n1'],['Licensing income','lic','gbp'],['Spin-outs surviving 3+ years','spin','n1']]]];
+const PL_CMP=['YoY change','vs 5-year average','vs 10-year average','vs 2018/19 (pre-Covid)'];
+const PL_CL=['Anchored research-intensive','Contract-research growers','SME & locally embedded growers','Contracting collaborators','Regeneration-exposed, eroding'];
+const PL_CL_COL=[C.pd,C.pink,C.blue,C.green,'#e8a600','#aaa5bb'];
+const plClOf=p=>{const c=p.cl||''; const i=PL_CL.findIndex(n=>c.startsWith(n)); return i<0?5:i;};
+const plClName=i=>i<5?PL_CL[i]:'Other (low-volume or not clustered)';
+function plIndStats(e,k){
+  const a=PY.map((_,y)=>plAmt(e,k,y)), cur=a[LY];
+  const avg=(i0,i1)=>{let s=0,n=0;for(let i=i0;i<=i1;i++) if(a[i]!=null){s+=a[i];n++;} return n?s/n:null;};
+  const base=[a[LY-1],avg(LY-5,LY-1),avg(LY-10,LY-1),a[4]];
+  return {cur,base,chg:base.map(b=>(cur==null||b==null||!b)?null:(cur/b-1)*100)};
+}
+const plArrow=p=>p==null?'<span style="color:#aaa">n/a</span>':p>=10?'<span class="arrow a-uu">⏫</span>':p>=1?'<span class="arrow a-u">⌃</span>':p>-1?'<span class="arrow a-f">—</span>':p>-10?'<span class="arrow a-d">⌄</span>':'<span class="arrow a-dd">⏬</span>';
+const plBucket=p=>p==null?null:p>=1?'above':p<=-1?'below':'at';
+function plAllInd(e){const o=[]; PL_IND.forEach(c=>c[1].forEach(r=>o.push({cat:c[0],name:r[0],k:r[1],f:r[2],st:plIndStats(e,r[1])}))); return o;}
+const plPct=(v,d)=>v==null?'–':(v>0?'+':'')+v.toFixed(d==null?0:d)+'%';
+const plSign=v=>v>=0?'up':'down';
+const plLast=a=>{for(let i=a.length-1;i>=0;i--) if(a[i]!=null) return a[i]; return null;};
+
 /* ---------- controls ---------- */
 function plOptionsHtml(lvl,excl,ph){
   const A=Object.values(plAreas(lvl)).filter(a=>!excl||!excl.includes(a.id));
@@ -75,14 +98,13 @@ function plOptionsHtml(lvl,excl,ph){
   Object.keys(byR).sort().forEach(r=>{h+=`<optgroup label="${r}">`+byR[r].sort((p,q)=>p.name.localeCompare(q.name)).map(a=>`<option value="${a.id}">${a.name}</option>`).join('')+'</optgroup>';});
   return h;
 }
-function plDefaultPlace(lvl){
-  const A=Object.values(plAreas(lvl)); A.sort((p,q)=>q.provs.length-p.provs.length||p.name.localeCompare(q.name)); return A[0].id;
-}
+function plDefaultPlace(lvl){const A=Object.values(plAreas(lvl)); A.sort((p,q)=>q.provs.length-p.provs.length||p.name.localeCompare(q.name)); return A[0].id;}
 function plFillSelects(){
   document.getElementById('plPlace').innerHTML=plOptionsHtml(PS.level,null,null);
   document.getElementById('plPlace').value=PS.place;
   document.getElementById('plAdd').innerHTML=plOptionsHtml(PS.level,[PS.place].concat(PS.extra),'Add a place…');
 }
+const PX={cagrSeg:'bci',berdBase:null};
 function renderPlace(){
   if(!PLP||!PLP.provs){document.getElementById('tab-place').insertAdjacentHTML('beforeend','<p>Place data unavailable (input/master_panel.xlsx was not found at build time).</p>');return;}
   PS.place=plDefaultPlace(PS.level); plFillSelects();
@@ -93,85 +115,280 @@ function renderPlace(){
   seg('plScale',b=>{PS.scale=b.dataset.v;});
   seg('plSet',b=>{PS.set=b.dataset.v;});
   seg('plBench',b=>{b.classList.toggle('active'); PS.bench[b.dataset.v]=b.classList.contains('active');});
+  seg('plCagrSeg',b=>{PX.cagrSeg=b.dataset.v;});
   document.getElementById('plPlace').addEventListener('change',e=>{PS.place=e.target.value;PS.extra=PS.extra.filter(x=>x!==PS.place);plFillSelects();plRender();});
   document.getElementById('plAdd').addEventListener('change',e=>{const v=e.target.value; if(v&&!PS.extra.includes(v)&&PS.extra.length<4) PS.extra.push(v); plFillSelects(); plRender();});
   document.getElementById('plChips').addEventListener('click',e=>{const b=e.target.closest('button[data-id]'); if(!b) return; PS.extra=PS.extra.filter(x=>x!==b.dataset.id); plFillSelects(); plRender();});
+  document.getElementById('plBerdBase').addEventListener('change',e=>{PX.berdBase=+e.target.value; plBerd(plEntities());});
   document.getElementById('plPptArea').addEventListener('click',plPptx);
   plRender();
 }
 function plRender(){
   const E=plEntities(); if(!E.length) return;
-  plChips(E); plKpis(E); plInsights(E); plMap(E); plProfile(E);
-  plCharts(E); plEco(E);
+  plChips(E); plKpis(E); plMap(E); plProfile(E);
+  plBerd(E); plCpm(E); plBci(E); plTypes(E); plCagrChart(E); plClusters(E); plProducts(E); plEco(E);
+  plStories(E);
 }
 function plChips(E){
   document.getElementById('plChips').innerHTML=E.map(e=>`<span class="pl-chip" style="background:${e.col}">${e.key==='place'?'📍 ':''}${e.name}${e.key[0]==='x'?`<button data-id="${e.id}" aria-label="Remove ${e.name}">✕</button>`:''}</span>`).join('');
 }
-
-/* ---------- KPIs ---------- */
 function plKpis(E){
-  const P=E[0], B=E.slice(1), y=LY;
+  const P=E[0], B=E.slice(1), y=LY, u=plUnit();
   const def=[
     {l:'universities reporting, '+PY[y],v:e=>e.n[y],f:'n',cls:''},
-    {l:'BCI '+plUnit()+', '+PY[y],v:e=>plAmt(e,'bci',y),f:'gbp',cls:'g'},
+    {l:'BCI '+u+', '+PY[y],v:e=>plAmt(e,'bci',y),f:'gbp',cls:'g'},
     {l:'BCI per academic (£000)',v:e=>plRat(e,'bci','acad',1,y),f:'gbp1',cls:'b'},
-    {l:'SME share of BCI',v:e=>plRat(e,'sme','bci',100,y),f:'pct',cls:'y'},
-    {l:'BCI growth, 5-year CAGR'+(PS.scale==='per'?' (per university)':''),v:e=>plCagr(plBciSeries(e),y,5),f:'pcts',cls:''},
-    {l:'surviving spin-outs '+plUnit(),v:e=>plAmt(e,'spin',y),f:PS.scale==='per'?'n1':'n',cls:'g'},
-  ];
+    {l:'SME share of BCI',v:e=>plRat(e,'sme','bci',100,y),f:'pct',cls:'y'}];
   document.getElementById('plKpis').innerHTML=def.map(d=>{
-    const pv=d.v(P);
-    const cmp=B.map(b=>`<span style="color:${b.col};font-weight:700">${b.name==='United Kingdom'?'UK':plShort(b.name)}</span> ${plFmt(d.v(b),d.f)}`).join(' · ');
-    return `<div class="kpi ${d.cls}"><div class="v" style="font-size:26px">${plFmt(pv,d.f)}</div><div class="l">${d.l}</div><div style="font-size:11.5px;margin-top:6px;line-height:1.5">${cmp}</div></div>`;}).join('');
+    const cmp=B.map(b=>`<span style="color:${b.col};font-weight:700">${b.key==='uk'?'UK':plShort(b.name)}</span> ${plFmt(d.v(b),d.f)}`).join(' · ');
+    return `<div class="kpi ${d.cls}" style="padding:10px 12px"><div class="v" style="font-size:22px">${plFmt(d.v(P),d.f)}</div><div class="l">${d.l}</div><div style="font-size:11px;margin-top:4px;line-height:1.4">${cmp}</div></div>`;}).join('');
 }
 
-/* ---------- insights ---------- */
-function plVs(a,b,suffix){ if(a==null||b==null||!b) return ''; const r=(a/b-1)*100; return Math.abs(r)<3?`in line with ${suffix}`:`${Math.abs(r).toFixed(0)}% ${r>0?'above':'below'} ${suffix}`; }
-function plSpearman(xs,ys){const rank=a=>{const idx=a.map((v,i)=>[v,i]).sort((p,q)=>p[0]-q[0]);const r=Array(a.length);idx.forEach((p,i)=>r[p[1]]=i+1);return r;};
-  const rx=rank(xs),ry=rank(ys),n=xs.length; if(n<5) return null; const mx=rx.reduce((a,b)=>a+b,0)/n,my=ry.reduce((a,b)=>a+b,0)/n;
-  let sxy=0,sx=0,sy=0; for(let i=0;i<n;i++){sxy+=(rx[i]-mx)*(ry[i]-my);sx+=(rx[i]-mx)**2;sy+=(ry[i]-my)**2;} return sxy/Math.sqrt(sx*sy);}
-function plInsightList(E){
-  const P=E[0], B=E.slice(1), y=LY, out=[], area=P.name;
-  const uk=E.find(e=>e.key==='uk')||plEntities().find(e=>e.key==='uk')||(()=>Object.assign({name:'UK'},plAggregate(plSetF(PLP.provs))))();
-  const bn=B.length?B:[uk]; const first=bn[0];
-  const list=(fn,f)=>bn.map(b=>`${fn(b)==null?'–':plFmt(fn(b),f)} ${b.name}`).join(', ');
-  // 1 presence
-  const nUK=uk.n[y]||1;
-  out.push(['Presence',`${area} has <b>${P.n[y]}</b> universit${P.n[y]===1?'y':'ies'} reporting in ${PY[y]} (${(P.n[y]/nUK*100).toFixed(1)}% of the UK's) and accounts for <b>${((P.s.bci[y]||0)/uk.s.bci[y]*100).toFixed(1)}%</b> of UK business collaboration income (${plFmt(P.s.bci[y],'gbp')}).`]);
-  // 2 per university
-  const pu=P.s.bci[y]/P.n[y];
-  out.push(['Income per university',`Business collaboration income averages <b>${plFmt(pu,'gbp')}</b> per university here, against ${bn.map(b=>plFmt(b.s.bci[y]/b.n[y],'gbp')+' '+(b.key==='uk'?'across the UK':b.key==='eng'?'in England':'in '+b.name)).join(' and ')}. That is ${plVs(pu,first.s.bci[y]/first.n[y],plN(first)+' average')}.`]);
-  // 3 per academic
-  const pa=plRat(P,'bci','acad',1,y);
-  if(pa!=null) out.push(['Intensity',`BCI per academic is <b>${plFmt(pa,'gbp1')}</b> (${list(b=>plRat(b,'bci','acad',1,y),'gbp1')}): ${plVs(pa,plRat(first,'bci','acad',1,y),plN(first)+' figure')}.`]);
-  // 4 growth
-  const g5=plCagr(plBciSeries(P),y,5), gb=plCagr(plBciSeries(first),y,5);
-  if(g5!=null) out.push(['Five-year momentum',`${PY[y-5]} to ${PY[y]}: BCI ${PS.scale==='per'?'per university ':''}${g5>=0?'grew':'fell'} <b>${Math.abs(g5).toFixed(1)}% a year</b> here, against ${gb>=0?'growth of ':'a fall of '}${Math.abs(gb).toFixed(1)}% for ${plN(first)}.`+(PS.set==='all'?' <i>Includes providers entering the panel; switch to "Core 136" for a stable set.</i>':'')]);
-  // 5 pre-covid
-  const i19=PY.indexOf('2019/20'); const p19=plAmt(P,'bci',i19), p24=plAmt(P,'bci',y), f19=plAmt(first,'bci',i19), f24=plAmt(first,'bci',y);
-  if(p19>0&&f19>0) out.push(['Since pre-Covid',`Compared with 2019/20, BCI ${plUnit()} is <b>${Math.abs((p24/p19-1)*100).toFixed(0)}%</b> ${p24>=p19?'higher':'lower'} here and ${Math.abs((f24/f19-1)*100).toFixed(0)}% ${f24>=f19?'higher':'lower'} for ${plN(first)}.`]);
-  // 6 mix
-  const st=[['cr','contract research'],['cons','consultancy'],['fac','facilities & equipment'],['ip','IP licensing']];
-  const tot=e=>st.reduce((s,k)=>s+(e.s[k[0]][y]||0),0);
-  if(tot(P)>0&&tot(first)>0){const diffs=st.map(k=>[k[1],(P.s[k[0]][y]||0)/tot(P)*100-(first.s[k[0]][y]||0)/tot(first)*100,(P.s[k[0]][y]||0)/tot(P)*100]).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
-    const d=diffs[0]; const big=st.map(k=>[k[1],(P.s[k[0]][y]||0)/tot(P)*100]).sort((a,b)=>b[1]-a[1])[0];
-    out.push(['What the income is for',`${big[0][0].toUpperCase()+big[0].slice(1)} is the largest stream (${big[1].toFixed(0)}% of BCI). Compared with ${plN(first)}, the biggest difference is <b>${d[0]}</b>: ${d[2].toFixed(0)}% of BCI here, ${Math.abs(d[1]).toFixed(0)} points ${d[1]>0?'above':'below'}.`]);}
-  // 7 SME
-  const sm=plRat(P,'sme','bci',100,y), smb=plRat(first,'sme','bci',100,y);
-  if(sm!=null) out.push(['Who it is with',`SMEs supply <b>${plFmt(sm,'pct')}</b> of BCI here (${list(b=>plRat(b,'sme','bci',100,y),'pct')}).`]);
-  // 8 spin-outs
-  const sp=plAmt(P,'spin',y), spb=plAmt(first,'spin',y);
-  if(sp!=null) out.push(['Spin-outs',`${plFmt(P.s.spin[y],'n')} surviving spin-outs (3+ years), ${PS.scale==='per'?'':'or '}<b>${(P.s.spin[y]/P.n[y]).toFixed(1)} per university</b>, against ${(first.s.spin[y]/first.n[y]).toFixed(1)} for ${plN(first)}.`]);
-  // 9 partners
-  const ps=plRat(P,'cpart','collab',100,y), pb=plRat(first,'cpart','collab',100,y);
-  if(ps!=null&&pb!=null) out.push(['Partner contribution',`Partners fund <b>${plFmt(ps,'pct')}</b> of publicly funded collaborative research here (${list(b=>plRat(b,'cpart','collab',100,y),'pct')}).`]);
-  return out;
+/* ---------- trend helpers ---------- */
+function plTrace(e,y,name,extra){
+  return Object.assign({x:PY,y:y,name:name||e.name,legendgroup:e.key,mode:'lines+markers',connectgaps:false,
+    line:{color:e.col,width:e.w,dash:e.dash},marker:{size:e.key==='place'?7:5,color:e.col}},extra||{});
 }
-function plInsights(E){
-  document.getElementById('plInsHead').textContent='What stands out in '+E[0].name;
-  const html=plInsightList(E).map(i=>`<div class="insight"><b class="h">${i[0]}</b>${i[1]}</div>`).join('');
-  const minE=E[0].provs.filter(p=>(p.s.bci[LY]||0)<200).length;
-  document.getElementById('plInsights').innerHTML=html+(minE>0&&E[0].provs.length>1?`<div class="insight" style="border-left-color:var(--purple-light)"><b class="h">Reading averages</b>${minE} of the ${E[0].provs.length} providers here report under £0.2m of BCI. Per-university averages are pulled down by small providers: see the universities table.</div>`:'');
+function plSub(id,panels,cols,height){
+  const E=plEntities(), rows=Math.ceil(panels.length/cols), tr=[], lay={height:height||(rows*300+80),margin:{l:60,r:20,t:30,b:60},legend:{orientation:'h',y:-0.08},annotations:[]};
+  const gx=0.07, gy=0.16;
+  panels.forEach((p,i)=>{
+    const c=i%cols, r=Math.floor(i/cols), sfx=i?String(i+1):'';
+    const w=(1-gx*(cols-1))/cols, h=(1-gy*(rows-1))/rows, x0=c*(w+gx), y1=1-r*(h+gy), y0=y1-h;
+    lay['xaxis'+sfx]={domain:[x0,x0+w],anchor:'y'+sfx,gridcolor:'#eeebf1',tickangle:-45,tickfont:{size:10}};
+    lay['yaxis'+sfx]={domain:[y0,y1],anchor:'x'+sfx,gridcolor:'#eeebf1',tickformat:p.tf||',',rangemode:'tozero'};
+    lay.annotations.push({xref:'paper',yref:'paper',x:x0,y:y1+0.03,text:'<b>'+p.t+'</b>',showarrow:false,xanchor:'left',yanchor:'bottom',font:{size:12.5,color:C.pd}});
+    E.forEach(e=>{const ys=PY.map((_,y)=>{const v=p.get(e,y); return v==null?null:v;});
+      tr.push(plTrace(e,ys,null,{xaxis:'x'+sfx,yaxis:'y'+sfx,showlegend:i===0,hovertemplate:'%{x}: <b>%{y:'+(p.hf||',.1f')+'}</b>'+(p.suffix||'')+'<extra>'+e.name+'</extra>'}));});
+  });
+  Plotly.newPlot(id,tr,L(lay),CFG);
+}
+const plM=k=>(e,y)=>{const v=plAmt(e,k,y); return v==null?null:v/1000;};
+
+/* ---------- 1. business R&D backdrop ---------- */
+const PL_YR=y=>y; // calendar-year helper
+function plBerdSeries(E){
+  const B=PLP.berd||{}, R=B.region; if(!R||!R.length) return null;
+  const cpi=PLP.cpi, toReal=r=>{ if(r.p!=='nominal') return r.v; const ay=r.y+'/'+String((r.y+1)%100).padStart(2,'0'); const c=cpi[ay]; return c?r.v/c*100:r.v; };
+  const norm=s=>String(s).toLowerCase().replace(/[^a-z0-9]/g,'');
+  const A=plAreas(PS.level), out=[];
+  E.forEach(e=>{
+    let want=e.key==='uk'?['unitedkingdom','uk']:e.key==='eng'?['england']:[norm(e.name)];
+    let note='';
+    let rows=R.filter(r=>want.includes(norm(r.a)));
+    if(!rows.length&&(e.key==='place'||e.key[0]==='x')){const a=e.key==='place'?A[PS.place]:A[e.id]; if(a&&a.r){rows=R.filter(r=>norm(r.a)===norm(a.r)); note=' (region: '+a.r+')';}}
+    if(rows.length){const m={}; rows.forEach(r=>m[r.y]=toReal(r)); out.push({e,name:e.name+note,m});}
+  });
+  return out.length?out:null;
+}
+function plBerd(E){
+  const B=PLP.berd||{}, A=plAreas(PS.level)[PS.place], ser=plBerdSeries(E);
+  const noteEl=document.getElementById('plBerdTrendNote');
+  // (a) trend
+  if(ser){
+    const yrs=[...new Set(ser.flatMap(s=>Object.keys(s.m).map(Number)))].sort();
+    noteEl.textContent='£m, real terms · ONS BERD';
+    Plotly.newPlot('chBerdTrend',ser.map(s=>plTrace(s.e,yrs.map(y=>s.m[y]==null?null:s.m[y]),s.name,{x:yrs})),L({height:420,margin:{l:70,r:20,t:10,b:60},yaxis:{title:{text:'£m, real terms',font:{size:12}},gridcolor:'#eeebf1',rangemode:'tozero'}}),CFG);
+  } else if(B.uk){
+    noteEl.textContent='UK total, £bn';
+    Plotly.newPlot('chBerdTrend',[{x:B.uk.years,y:B.uk.values,type:'scatter',mode:'lines+markers',name:'UK business R&D',line:{color:C.pd,width:3},marker:{size:7},hovertemplate:'%{x}: <b>£%{y:.1f}bn</b><extra></extra>'}],
+      L({height:420,margin:{l:70,r:20,t:10,b:60},yaxis:{title:{text:'£bn',font:{size:12}},gridcolor:'#eeebf1',rangemode:'tozero'},
+         annotations:[{xref:'paper',yref:'paper',x:0.5,y:1.0,text:'UK total only. Regional series need input/berd_region.csv',showarrow:false,font:{size:11,color:C.pm}}]}),CFG);
+  } else { document.getElementById('chBerdTrend').innerHTML='<div class="data-needed">No business R&amp;D data loaded.</div>'; }
+  // (b) industry
+  const I=B.industry, ie=document.getElementById('chBerdInd');
+  if(I&&I.rows.length){
+    const rows=I.rows.slice().sort((a,b)=>b.pct-a.pct), col=v=>v>=0?C.green:v>-10?'#e8a600':C.pink;
+    Plotly.newPlot(ie,[{type:'bar',orientation:'h',y:rows.map(r=>r.g),x:rows.map(r=>r.pct),marker:{color:rows.map(r=>col(r.pct))},text:rows.map(r=>(r.pct>0?'+':'')+r.pct.toFixed(1)+'%'),textposition:'outside',cliponaxis:false,hovertemplate:'%{y}: <b>%{x:+.1f}%</b><extra></extra>'}],
+      L({height:Math.max(420,rows.length*28+70),margin:{l:170,r:60,t:10,b:40},yaxis:{autorange:'reversed',automargin:true},xaxis:{ticksuffix:'%',gridcolor:'#eeebf1',zeroline:true,range:[Math.min(-10,Math.min(...rows.map(r=>r.pct))-10),Math.max(10,Math.max(...rows.map(r=>r.pct))+8)]}}),CFG);
+    document.getElementById('plBerdIndSrc').textContent='Percent change in UK business R&D expenditure, '+I.base+' to '+I.last+', by broad group. Source: '+I.src+'.';
+  } else ie.innerHTML='<div class="data-needed">No industry data loaded (input/berd_industry.csv).</div>';
+  // (c) growth comparison
+  const ge=document.getElementById('chBerdGrow'), gs=document.getElementById('plBerdGrowSrc'), bw=document.getElementById('plBerdBaseWrap');
+  if(ser){
+    const yrs=[...new Set(ser.flatMap(s=>Object.keys(s.m).map(Number)))].sort(), last=yrs[yrs.length-1];
+    const bsel=document.getElementById('plBerdBase'); bw.style.display='';
+    if(bsel.dataset.n!==String(yrs.length)){bsel.innerHTML=yrs.slice(0,-1).map(y=>`<option value="${y}">${y}</option>`).join(''); bsel.dataset.n=yrs.length; PX.berdBase=yrs.length>3?yrs[yrs.length-4]:yrs[0]; bsel.value=PX.berdBase;}
+    const base=PX.berdBase;
+    const rows=ser.map(s=>({s,g:(s.m[base]&&s.m[last])?(s.m[last]/s.m[base]-1)*100:null})).filter(r=>r.g!=null);
+    Plotly.newPlot(ge,[{type:'bar',x:rows.map(r=>r.s.name),y:rows.map(r=>r.g),marker:{color:rows.map(r=>r.s.e.col)},text:rows.map(r=>plPct(r.g,1)),textposition:'outside',cliponaxis:false,hovertemplate:'%{x}: <b>%{y:+.1f}%</b><extra></extra>'}],
+      L({height:420,margin:{l:60,r:20,t:20,b:90},yaxis:{ticksuffix:'%',gridcolor:'#eeebf1',zeroline:true},xaxis:{tickangle:-20,automargin:true}}),CFG);
+    gs.textContent='Change in business R&D expenditure, '+base+' to '+last+', real terms. Source: ONS BERD (input/berd_region.csv).';
+  } else if(B.intl){
+    bw.style.display='none';
+    const rows=B.intl.rows.slice().sort((a,b)=>a.pct-b.pct);
+    Plotly.newPlot(ge,[{type:'bar',x:rows.map(r=>r.c),y:rows.map(r=>r.pct),marker:{color:rows.map(r=>r.c==='United Kingdom'?C.pink:C.pd)},text:rows.map(r=>r.pct.toFixed(1)+'%'),textposition:'outside',cliponaxis:false,hovertemplate:'%{x}: <b>%{y:+.1f}%</b><extra></extra>'}],
+      L({height:420,margin:{l:60,r:20,t:20,b:110},yaxis:{ticksuffix:'%',gridcolor:'#eeebf1',zeroline:true},xaxis:{tickangle:-35,automargin:true}}),CFG);
+    gs.innerHTML='Business expenditure on R&D, growth since '+B.intl.base+' across economies. Source: '+B.intl.src+'. <b>The picked place cannot be shown yet: add input/berd_region.csv</b> (see README).';
+  } else ge.innerHTML='<div class="data-needed">No comparison data loaded.</div>';
+}
+
+/* ---------- 2. CPM indicators, above/below, BCI ---------- */
+function plCpm(E){
+  const P=E[0], B=E.slice(1), ps=plAllInd(P);
+  document.getElementById('plCpmNote').textContent=P.name+' · '+PY[LY]+' · '+(PS.scale==='per'?'per university':'total');
+  const th='<thead><tr><th>Indicator</th><th class="c">'+PY[LY]+'</th>'+PL_CMP.map(c=>`<th class="c">${c}</th>`).join('')+B.map(b=>`<th class="c" style="color:#e9d7f3">${b.key==='uk'?'UK':b.name}<br><span style="font-weight:400;font-size:11px">${PY[LY]}</span></th>`).join('')+'</tr></thead>';
+  let html=th+'<tbody>', cat='';
+  const bs=B.map(b=>plAllInd(b));
+  ps.forEach((r,i)=>{
+    if(r.cat!==cat){cat=r.cat; html+=`<tr class="cat"><td colspan="${2+PL_CMP.length+B.length}">${cat}</td></tr>`;}
+    const f=v=>plFmt(v,r.f);
+    html+=`<tr class="data"><td>${r.name}</td><td class="c" style="font-weight:700">${f(r.st.cur)}</td>`+
+      r.st.chg.map((p,j)=>`<td class="c" title="${f(r.st.cur)} vs ${f(r.st.base[j])}: ${p==null?'n/a':plPct(p,1)}">${plArrow(p)}</td>`).join('')+
+      bs.map(b=>`<td class="c">${f(b[i].st.cur)}</td>`).join('')+'</tr>';
+  });
+  document.getElementById('plCpm').innerHTML=html+'</tbody>';
+  // above / at / below counts
+  const names=[],comp=[],cnt={above:[],at:[],below:[]};
+  PL_CMP.forEach((c,j)=>E.forEach(e=>{const st=plAllInd(e).map(r=>plBucket(r.st.chg[j])); comp.push(c); names.push(e.name);
+    ['above','at','below'].forEach(k=>cnt[k].push(st.filter(x=>x===k).length));}));
+  const mk=(k,n,c)=>({type:'bar',name:n,x:[comp,names],y:cnt[k],marker:{color:c},hovertemplate:'%{x}: <b>%{y}</b> indicators '+k+' the comparison<extra></extra>',text:cnt[k].map(v=>v||''),textposition:'inside'});
+  Plotly.newPlot('chPlAbove',[mk('above','Above',C.green),mk('at','At the average (±1%)','#e8c200'),mk('below','Below',C.pink)],
+    L({barmode:'stack',height:420,margin:{l:50,r:20,t:10,b:110},yaxis:{title:{text:'Number of indicators',font:{size:12}},gridcolor:'#eeebf1',dtick:1,range:[0,9]},xaxis:{tickfont:{size:11}}}),CFG);
+}
+function plBci(E){
+  const u=plUnit();
+  document.getElementById('plScaleNote').textContent='£m, '+u+(PS.set==='core'?' · core 136':' · all providers');
+  Plotly.newPlot('chPlBci',E.map(e=>plTrace(e,PY.map((_,y)=>plM('bci')(e,y)),null,{hovertemplate:'%{x}: <b>£%{y:.2f}m</b><extra>'+e.name+'</extra>'})),
+    L({height:470,margin:{l:70,r:20,t:10,b:70},yaxis:{title:{text:'£m, '+u+', real 2024/25',font:{size:12}},gridcolor:'#eeebf1',rangemode:'tozero'}}),CFG);
+}
+
+/* ---------- 3. type of collaboration x business size ---------- */
+function plTypes(E){
+  const u=plUnit(), P=E[0], B=E.slice(1), tr=[], lay={height:760,margin:{l:60,r:20,t:30,b:60},legend:{orientation:'h',y:-0.07},annotations:[]};
+  const panels=[['Contract research','cr_sme','cr_lc'],['Consultancy','cons_sme','cons_lc'],['Facilities & equipment','fac_sme','fac_lc'],['IP licensing','lic_sme','lic_lc']];
+  const gx=0.07,gy=0.16,w=(1-gx)/2,h=(1-gy)/2;
+  panels.forEach((p,i)=>{
+    const c=i%2,r=Math.floor(i/2),sfx=i?String(i+1):'',x0=c*(w+gx),y1=1-r*(h+gy),y0=y1-h;
+    lay['xaxis'+sfx]={domain:[x0,x0+w],anchor:'y'+sfx,gridcolor:'#eeebf1',tickangle:-45,tickfont:{size:10}};
+    lay['yaxis'+sfx]={domain:[y0,y1],anchor:'x'+sfx,gridcolor:'#eeebf1',rangemode:'tozero',tickformat:',.1f'};
+    lay.annotations.push({xref:'paper',yref:'paper',x:x0,y:y1+0.03,text:'<b>'+p[0]+' (£m '+u+')</b>',showarrow:false,xanchor:'left',yanchor:'bottom',font:{size:12.5,color:C.pd}});
+    [[1,'SMEs',C.pd],[2,'Large businesses',C.pink]].forEach(([idx,lab,col])=>{
+      [P].concat(B).forEach((e,j)=>{
+        tr.push({x:PY,y:PY.map((_,y)=>plM(p[idx])(e,y)),xaxis:'x'+sfx,yaxis:'y'+sfx,mode:'lines+markers',name:lab+' · '+e.name,legendgroup:lab+e.key,showlegend:i===0,connectgaps:false,
+          line:{color:col,width:j?2:3.5,dash:j?(j===1?'dot':'dash'):'solid'},marker:{size:j?3:6,color:col},opacity:j?0.7:1,hovertemplate:'%{x}: <b>£%{y:.2f}m</b><extra>'+lab+' · '+e.name+'</extra>'});});});
+  });
+  Plotly.newPlot('chPlTypes',tr,L(lay),CFG);
+  // mix and SME share
+  const st=[['cr','Contract research',C.pd],['cons','Consultancy',C.pink],['fac','Facilities & equipment',C.blue],['ip','IP licensing',C.green]];
+  const rev=E.slice().reverse(), tot=e=>st.reduce((s,k)=>s+(e.s[k[0]][LY]||0),0);
+  Plotly.newPlot('chPlMix',st.map(k=>({type:'bar',orientation:'h',name:k[1],y:rev.map(e=>plShort(e.name)),x:rev.map(e=>tot(e)?(e.s[k[0]][LY]||0)/tot(e)*100:0),marker:{color:k[2]},hovertemplate:'%{y}: %{x:.0f}% '+k[1]+'<extra></extra>'})),
+    L({barmode:'stack',height:Math.max(320,E.length*62+110),margin:{l:190,r:20,t:10,b:70},xaxis:{ticksuffix:'%',range:[0,100],gridcolor:'#eeebf1'},yaxis:{automargin:true}}),CFG);
+  document.getElementById('plMixSrc').textContent=PY[LY]+'. Share of BCI by stream.';
+  Plotly.newPlot('chPlSme',E.map(e=>plTrace(e,PY.map((_,y)=>plRat(e,'sme','bci',100,y)),null,{hovertemplate:'%{x}: <b>%{y:.1f}%</b><extra>'+e.name+'</extra>'})),
+    L({height:Math.max(320,E.length*62+110),margin:{l:60,r:20,t:10,b:60},yaxis:{ticksuffix:'%',gridcolor:'#eeebf1'}}),CFG);
+}
+
+/* ---------- 4. growth vs all other places ---------- */
+function plCagrData(seg){
+  const out=[];
+  Object.values(plAreas(PS.level)).forEach(a=>{const e=plAggregate(plSetF(a.provs)); const g=plCagr(PY.map((_,y)=>plAmt(e,seg,y)),LY,5); if(g!=null) out.push({id:a.id,name:a.name,g,n:e.n[LY]});});
+  return out.sort((a,b)=>b.g-a.g);
+}
+function plCagrChart(E){
+  const seg=PX.cagrSeg, rows=plCagrData(seg), col={}, segLab=seg==='bci'?'total BCI':seg==='sme'?'SME BCI':'large-business BCI';
+  E.forEach(e=>{ if(e.key==='place') col[PS.place]=e.col; else if(e.key[0]==='x') col[e.id]=e.col; });
+  const rev=rows.slice().reverse();
+  const shapes=[],ann=[];
+  E.filter(e=>e.key==='uk'||e.key==='eng').forEach(e=>{const g=plCagr(PY.map((_,y)=>plAmt(e,seg,y)),LY,5); if(g==null) return;
+    shapes.push({type:'line',x0:g,x1:g,y0:-.5,y1:rev.length-.5,line:{color:e.col,dash:'dash',width:1.5}}); ann.push({x:g,y:rev.length-.5,text:e.name+' '+plPct(g,1),showarrow:false,yanchor:'bottom',xanchor:e.key==='uk'?'left':'right',font:{size:11,color:e.col}});});
+  Plotly.newPlot('chPlCagr',[{type:'bar',orientation:'h',y:rev.map(r=>plShort(r.name)),x:rev.map(r=>r.g),customdata:rev.map(r=>r.n),
+    marker:{color:rev.map(r=>col[r.id]||'#cfc9dc'),line:{color:rev.map(r=>col[r.id]?'#222':'rgba(0,0,0,0)'),width:rev.map(r=>col[r.id]?2:0)}},
+    hovertemplate:'<b>%{y}</b><br>%{x:+.1f}% a year · %{customdata} universities<extra></extra>'}],
+    L({height:Math.max(440,rev.length*(PS.level==='ttwa'?17:24)+90),margin:{l:230,r:30,t:24,b:50},xaxis:{ticksuffix:'%',gridcolor:'#eeebf1',zeroline:true},yaxis:{automargin:true,tickfont:{size:PS.level==='ttwa'?10:12}},shapes,annotations:ann}),CFG);
+  document.getElementById('plCagrSrc').textContent=PY[LY-5]+' to '+PY[LY]+', '+segLab+(PS.scale==='per'?' per university':'')+', real prices. Pink = selected place, blue = places compared, dashed = UK / England. '+(PS.set==='all'?'All providers: growth also reflects providers entering the panel.':'Core 136 universities.');
+  Plotly.newPlot('chPlIdx',E.map(e=>{const raw=PY.map((_,y)=>e.s.bci[y]); const b=raw.find(v=>v>0); return plTrace(e,raw.map(v=>v==null||!b?null:v/b*100),null,{hovertemplate:'%{x}: <b>%{y:.0f}</b><extra>'+e.name+'</extra>'});}),
+    L({height:400,margin:{l:60,r:20,t:10,b:70},yaxis:{title:{text:'Index, first year = 100',font:{size:12}},gridcolor:'#eeebf1'}}),CFG);
+}
+
+/* ---------- 5. types of university ---------- */
+function plClusters(E){
+  const A=plAreas(PS.level)[PS.place], u=plUnit(), uk=PLP.provs;
+  const grow=(provs)=>{const e=plAggregate(plSetF(provs)); return e.n[LY]?plCagr(PY.map((_,y)=>plAmt(e,'bci',y)),LY,5):null;};
+  const cats=[0,1,2,3,4].map(plClName);
+  const ukG=[0,1,2,3,4].map(i=>grow(uk.filter(p=>plClOf(p)===i))), plG=[0,1,2,3,4].map(i=>{const ps=A.provs.filter(p=>plClOf(p)===i); return ps.length?grow(ps):null;});
+  const nPl=[0,1,2,3,4].map(i=>A.provs.filter(p=>plClOf(p)===i&&p.s.bci[LY]!=null).length);
+  Plotly.newPlot('chPlTypesNat',[
+    {type:'bar',name:'UK, all universities of this type',x:cats,y:ukG,marker:{color:C.pd},text:ukG.map(v=>v==null?'':plPct(v,1)),textposition:'outside',cliponaxis:false},
+    {type:'bar',name:A.name+' universities of this type',x:cats,y:plG,marker:{color:C.pink},text:plG.map((v,i)=>v==null?'':plPct(v,1)+' (n='+nPl[i]+')'),textposition:'outside',cliponaxis:false}],
+    L({barmode:'group',height:460,margin:{l:60,r:20,t:20,b:150},yaxis:{ticksuffix:'%',gridcolor:'#eeebf1',zeroline:true,title:{text:'5-year CAGR of BCI'+(PS.scale==='per'?' per university':''),font:{size:12}}},xaxis:{tickangle:-20,automargin:true}}),CFG);
+  document.getElementById('plTypesSrc').textContent=PY[LY-5]+' to '+PY[LY]+', real prices. Pink bars appear only for types of university present in this place.';
+  const tr=[0,1,2,3,4,5].map(i=>{const ps=A.provs.filter(p=>plClOf(p)===i);
+    return {x:PY,y:PY.map((_,y)=>{const s=ps.reduce((a,p)=>a+(p.s.bci[y]||0),0); const n=PS.scale==='per'?(A.provs.filter(p=>p.s.bci[y]!=null).length||1):1; return ps.length&&(!PS.set||PS.set==='all'||ps.some(p=>p.core))?s/n/1000:null;}),
+      type:'scatter',mode:'lines',stackgroup:'one',name:plClName(i),line:{width:0.5,color:PL_CL_COL[i]},fillcolor:PL_CL_COL[i],hovertemplate:'%{x}: <b>£%{y:.2f}m</b><extra>'+plClName(i)+'</extra>'};});
+  Plotly.newPlot('chPlClusterArea',tr,L({height:460,margin:{l:60,r:20,t:20,b:130},legend:{orientation:'h',y:-0.2},yaxis:{title:{text:'£m, '+u+', real',font:{size:12}},gridcolor:'#eeebf1'}}),CFG);
+}
+
+/* ---------- 6. IP income, patents, spin-outs ---------- */
+function plProducts(E){
+  const P=E[0], u=plUnit();
+  const lay={height:520,margin:{l:60,r:20,t:30,b:70},legend:{orientation:'h',y:-0.14},barmode:'stack',annotations:[],
+    xaxis:{domain:[0,0.56],anchor:'y',tickangle:-45,tickfont:{size:10}},yaxis:{domain:[0,1],anchor:'x',gridcolor:'#eeebf1',tickformat:',.2f'},
+    xaxis2:{domain:[0.64,1],anchor:'y2',tickangle:-45,tickfont:{size:10}},yaxis2:{domain:[0,1],anchor:'x2',gridcolor:'#eeebf1',rangemode:'tozero'}};
+  lay.annotations.push({xref:'paper',yref:'paper',x:0,y:1.03,text:'<b>IP licensing income (£m '+u+', '+P.name+')</b>',showarrow:false,xanchor:'left',yanchor:'bottom',font:{size:12.5,color:C.pd}});
+  lay.annotations.push({xref:'paper',yref:'paper',x:0.64,y:1.03,text:'<b>Licences granted ('+u+')</b>',showarrow:false,xanchor:'left',yanchor:'bottom',font:{size:12.5,color:C.pd}});
+  const lc=PY.map((_,y)=>plM('lic_lc')(P,y)), sm=PY.map((_,y)=>plM('lic_sme')(P,y)), tot=PY.map((_,y)=>lc[y]==null&&sm[y]==null?null:(lc[y]||0)+(sm[y]||0));
+  const okT=tot.filter(v=>v!=null), avg=okT.length?okT.reduce((a,b)=>a+b,0)/okT.length:0;
+  const tr=[{type:'bar',x:PY,y:lc,name:'Large businesses',marker:{color:C.pd},hovertemplate:'%{x}: £%{y:.2f}m<extra>Large businesses</extra>'},
+    {type:'bar',x:PY,y:sm,name:'SMEs',marker:{color:C.pink},hovertemplate:'%{x}: £%{y:.2f}m<extra>SMEs</extra>'},
+    {type:'scatter',mode:'lines',x:PY,y:PY.map(()=>avg),name:'All-time average (£'+avg.toFixed(2)+'m)',line:{color:C.blue,dash:'dot',width:2}},
+    Object.assign(plTrace(P,PY.map((_,y)=>plAmt(P,'licn_lc',y)),'Large businesses (licences)',{xaxis:'x2',yaxis:'y2'}),{line:{color:C.pd,width:3},legendgroup:'ll'}),
+    Object.assign(plTrace(P,PY.map((_,y)=>plAmt(P,'licn_sme',y)),'SMEs (licences)',{xaxis:'x2',yaxis:'y2'}),{line:{color:C.pink,width:3},marker:{size:6,color:C.pink},legendgroup:'ls'})];
+  Plotly.newPlot('chPlIp',tr,L(lay),CFG);
+  plSub('chPlPatents',[{t:'Patents filed ('+u+')',get:(e,y)=>plAmt(e,'patf',y),hf:'.1f',tf:',.1f'},{t:'Patents granted ('+u+')',get:(e,y)=>plAmt(e,'patg',y),hf:'.1f',tf:',.1f'},{t:'Patents filed by external parties with a university co-applicant ('+u+')',get:(e,y)=>plAmt(e,'pate',y),hf:'.1f',tf:',.1f'}],3,420);
+  plSub('chPlSpin',[{t:'Surviving spin-outs, 3+ years ('+u+')',get:(e,y)=>plAmt(e,'spin',y),hf:'.1f',tf:',.1f'},{t:'Spin-outs per 100 academics',get:(e,y)=>plRat(e,'spin','acad',100,y),hf:'.1f',tf:',.1f'}],2,420);
+}
+
+/* ---------- storytelling: a coherent thread of questions and answers ---------- */
+function plStories(E){
+  const P=E[0], B=E.slice(1), y=LY, u=plUnit(), Bn=B.length?B[0]:null, nm=b=>b.key==='uk'?'the UK':b.name, A=plAreas(PS.level)[PS.place], BD=PLP.berd||{};
+  const set=(id,paras,cards)=>{document.getElementById(id).innerHTML=paras.filter(Boolean).map(t=>`<p>${t}</p>`).join('')+(cards&&cards.length?`<div class="insights">${cards.map(c=>`<div class="insight"><b class="h">${c[0]}</b>${c[1]}</div>`).join('')}</div>`:'');};
+  // chapter 1
+  const p1=[];
+  if(BD.uk){const v=BD.uk.values, yr=BD.uk.years, last=v[v.length-1], k=Math.max(0,v.length-6); const mx=Math.max(...v), my=yr[v.indexOf(mx)];
+    p1.push(`Universities collaborate with businesses that invest in R&amp;D, so the backdrop matters. UK business R&amp;D stood at <b>£${last.toFixed(1)}bn in ${yr[yr.length-1]}</b>, ${Math.abs((last/v[k]-1)*100)<0.5?'level with':Math.abs((last/v[k]-1)*100).toFixed(0)+'% '+(last>=v[k]?'above':'below')} its ${yr[k]} level, and ${last<mx?`<b>${((1-last/mx)*100).toFixed(0)}% below its ${my} peak of £${mx.toFixed(1)}bn</b>`:'at its peak'}.`);}
+  if(BD.industry&&BD.industry.rows.length){const r=BD.industry.rows.slice().sort((a,b)=>b.pct-a.pct), up=r.filter(x=>x.pct>0).length;
+    p1.push(`Under the headline the picture is uneven: between ${BD.industry.base} and ${BD.industry.last}, <b>${up} of ${r.length}</b> broad industry groups increased business R&amp;D, led by ${r[0].g.toLowerCase()} (${plPct(r[0].pct,1)}), while ${r[r.length-1].g.toLowerCase()} fell furthest (${plPct(r[r.length-1].pct,1)}).`);}
+  if(BD.intl){const uk=BD.intl.rows.find(x=>x.c==='United Kingdom'); if(uk){const lower=BD.intl.rows.filter(x=>x.pct<uk.pct).length; p1.push(`Internationally the UK is an outlier: business R&amp;D growth since ${BD.intl.base} was ${plPct(uk.pct,1)}, ${lower===0?'the weakest of the economies shown':'below most economies shown'}.`);}}
+  const ser=plBerdSeries(E);
+  if(ser){const m=ser.find(s=>s.e.key==='place'); if(m){const ys=Object.keys(m.m).map(Number).sort(); const l=ys[ys.length-1], b=PX.berdBase||ys[0]; if(m.m[b]) p1.push(`In <b>${m.name}</b>, business R&amp;D changed by <b>${plPct((m.m[l]/m.m[b]-1)*100,1)}</b> between ${b} and ${l} (real terms).`);}}
+  else{const i2=PS.level==='itl2'?PLP.itl2[PS.place]:null; if(i2&&i2.berd!=null) p1.push(`In ${A.name}, business R&amp;D per job is <b>£${Math.round(i2.berd).toLocaleString('en-GB')}</b> (ONS BERD 2024). <i>Add <code>input/berd_region.csv</code> to see the place's own trend and growth against the UK and England.</i>`); else p1.push(`<i>The place's own business R&amp;D trend needs the regional ONS BERD series: add <code>input/berd_region.csv</code> (format in the README).</i>`);}
+  p1.push(`<b>So what is happening to university–business collaboration in ${P.name}?</b> The next chapters follow that question.`);
+  set('plStory1',p1);
+  // chapter 2
+  const ps=plAllInd(P), cnt=j=>{const b=ps.map(r=>plBucket(r.st.chg[j])); return {a:b.filter(x=>x==='above').length,at:b.filter(x=>x==='at').length,b:b.filter(x=>x==='below').length};};
+  const c1=cnt(0),c5=cnt(1),c10=cnt(2),c19=cnt(3);
+  const withChg=ps.filter(r=>r.st.chg[0]!=null).sort((a,b)=>b.st.chg[0]-a.st.chg[0]);
+  const p2=[`Of the nine CPM indicators, <b>${c1.a}</b> rose and <b>${c1.b}</b> fell in the latest year in ${P.name}. Against the average of the previous five years ${c5.a} are above and ${c5.b} below; against ten years ${c10.a} are above and ${c10.b} below; and compared with 2018/19, before Covid, ${c19.a} are above and ${c19.b} below.`];
+  if(withChg.length>1) p2.push(`The strongest year-on-year move was <b>${withChg[0].name.replace(/^([A-Z])([a-z])/,(m,a,b)=>a.toLowerCase()+b)}</b> (${plPct(withChg[0].st.chg[0],0)}); the weakest was <b>${withChg[withChg.length-1].name.replace(/^([A-Z])([a-z])/,(m,a,b)=>a.toLowerCase()+b)}</b> (${plPct(withChg[withChg.length-1].st.chg[0],0)}).`);
+  if(Bn){const bc=cnt2(Bn); p2.push(`For comparison, ${nm(Bn)} has ${bc.a} indicators above and ${bc.b} below their 5-year averages.`);}
+  function cnt2(e){const b=plAllInd(e).map(r=>plBucket(r.st.chg[1])); return {a:b.filter(x=>x==='above').length,b:b.filter(x=>x==='below').length};}
+  const pu=plAmt(P,'bci',y), pa=plRat(P,'bci','acad',1,y);
+  set('plStory2',p2,[['Income '+u,`${plFmt(pu,'gbp')} of BCI in ${PY[LY]}`+(Bn?` against ${plFmt(plAmt(Bn,'bci',y),'gbp')} for ${nm(Bn)}`:'')+'.'],['Intensity',`BCI per academic is ${plFmt(pa,'gbp1')}`+(Bn?` (${plFmt(plRat(Bn,'bci','acad',1,y),'gbp1')} ${nm(Bn)})`:'')+'.']]);
+  // chapter 3
+  const st=[['cr','contract research'],['cons','consultancy'],['fac','facilities & equipment'],['ip','IP licensing']], tot=e=>st.reduce((s,k)=>s+(e.s[k[0]][y]||0),0);
+  const big=tot(P)?st.map(k=>[k[1],(P.s[k[0]][y]||0)/tot(P)*100]).sort((a,b)=>b[1]-a[1])[0]:null;
+  const smG=plIndStats(P,'sme').chg[3], lcG=plIndStats(P,'lc').chg[3];
+  const smS=plRat(P,'sme','bci',100,y);
+  const p3=[`${big?`<b>${big[0][0].toUpperCase()+big[0].slice(1)}</b> is the largest stream in ${P.name} (${big[1].toFixed(0)}% of BCI). `:''}SMEs supply <b>${plFmt(smS,'pct')}</b> of the income${Bn?` against ${plFmt(plRat(Bn,'sme','bci',100,y),'pct')} for ${nm(Bn)}`:''}.`];
+  if(smG!=null&&lcG!=null) p3.push(`Compared with 2018/19, SME-funded income ${u} is ${plSign(smG)} <b>${Math.abs(smG).toFixed(0)}%</b> and large-business income is ${plSign(lcG)} <b>${Math.abs(lcG).toFixed(0)}%</b>: ${smG>lcG?'SMEs have held up better than large businesses':'large businesses have held up better than SMEs'}.`);
+  set('plStory3',p3);
+  // chapter 4
+  const rows=plCagrData(PX.cagrSeg), me=rows.find(r=>r.id===PS.place), p4=[];
+  if(me){const gs=rows.map(r=>r.g); p4.push(`Over five years BCI ${PS.scale==='per'?'per university ':''}${me.g>=0?'grew':'fell'} by <b>${Math.abs(me.g).toFixed(1)}% a year</b> in ${P.name}. Across the ${rows.length} ${PS.level==='itl1'?'regions':PS.level==='itl2'?'sub-regions':'travel-to-work areas'} shown, five-year growth ranges from ${plPct(Math.min(...gs),1)} to ${plPct(Math.max(...gs),1)} a year, with a median of ${plPct(plMedian(gs),1)}`+(B.length?`; ${B.map(b=>{const g=plCagr(PY.map((_,k)=>plAmt(b,PX.cagrSeg,k)),LY,5); return nm(b)+' '+plPct(g,1);}).join(', ')}`:'')+'.');}
+  set('plStory4',p4);
+  // chapter 5
+  const sets=[0,1,2,3,4,5].map(i=>A.provs.filter(p=>plClOf(p)===i&&p.s.bci[y]!=null));
+  const mix=sets.map((s,i)=>s.length?`${s.length} ${plClName(i).replace(/^SME/,'SME')}`:null).filter(Boolean);
+  set('plStory5',[`The universities in ${P.name} are: ${mix.length?mix.join(', '):'none reporting'}. Types matter because the national picture differs sharply between, for example, research-intensive universities and SME-focused ones: compare the pink and purple bars.`]);
+  // chapter 6
+  const ipN=PY.map((_,k)=>plM('lic')(P,k)), ipNow=ipN[y], ipB=ipN[4], pg=plAmt(P,'patg',y), pg0=plAmt(P,'patg',y-1), sp=plAmt(P,'spin',y);
+  const p6=[];
+  if(ipNow!=null&&ipB>0) p6.push(`Licensing income is £${ipNow.toFixed(2)}m ${u}, ${Math.abs((ipNow/ipB-1)*100).toFixed(0)}% ${ipNow>=ipB?'above':'below'} 2018/19. `+(pg!=null&&pg0>0?`Patents granted ${pg>=pg0?'rose':'fell'} ${Math.abs((pg/pg0-1)*100).toFixed(0)}% in the latest year, and `:'')+(sp!=null?`there are <b>${plFmt(P.s.spin[y],'n')}</b> surviving spin-outs (${(P.s.spin[y]/P.n[y]).toFixed(1)} per university${Bn?` against ${(Bn.s.spin[y]/Bn.n[y]).toFixed(1)} for ${nm(Bn)}`:''}).`:''));
+  set('plStory6',p6);
+  // chapter 7
+  const tt=[...new Set(A.provs.map(p=>p.t).filter(Boolean))], c=tt.length===1?PLP.ttwa[tt[0]]:null;
+  set('plStory7',[c?`${P.name} is a <b>${(c.type||'local economy').toLowerCase()}</b>${c.ki!=null?` where ${(c.ki*100).toFixed(0)}% of employment is knowledge-intensive`:''}${c.gva?`, with GVA per filled job of £${Math.round(c.gva).toLocaleString('en-GB')}`:''}. Does collaboration income here track the strength of the local economy? Compare with the medians below.`:`${P.name} spans ${tt.length} travel-to-work area${tt.length===1?'':'s'}; the table shows how their economies differ.`]);
 }
 
 /* ---------- locator map ---------- */
@@ -215,57 +432,6 @@ function plProfile(E){
     <p class="src">${a.provs.length} universit${a.provs.length===1?'y':'ies'} with a main campus here. BCI = business collaboration income, ${PY[LY]}, real prices.</p>`;
 }
 
-/* ---------- trend charts ---------- */
-function plTrace(e,y,name,extra){
-  return Object.assign({x:PY,y:y,name:name||e.name,legendgroup:e.key,mode:'lines+markers',connectgaps:false,
-    line:{color:e.col,width:e.w,dash:e.dash},marker:{size:e.key==='place'?7:5,color:e.col}},extra||{});
-}
-/* grid of small multiples; each panel: {t,get(e,y),fmt,suffix} */
-function plSub(id,panels,cols,height){
-  const E=plEntities(), rows=Math.ceil(panels.length/cols), tr=[], lay={height:height||(rows*300+80),margin:{l:60,r:20,t:30,b:60},legend:{orientation:'h',y:-0.08},annotations:[]};
-  const gx=0.07, gy=0.16;
-  panels.forEach((p,i)=>{
-    const c=i%cols, r=Math.floor(i/cols), sfx=i?String(i+1):'';
-    const w=(1-gx*(cols-1))/cols, h=(1-gy*(rows-1))/rows;
-    const x0=c*(w+gx), y1=1-r*(h+gy), y0=y1-h;
-    lay['xaxis'+sfx]={domain:[x0,x0+w],anchor:'y'+sfx,gridcolor:'#eeebf1',tickangle:-45,tickfont:{size:10}};
-    lay['yaxis'+sfx]={domain:[y0,y1],anchor:'x'+sfx,gridcolor:'#eeebf1',tickformat:p.tf||',',rangemode:p.zero===false?'normal':'tozero'};
-    lay.annotations.push({xref:'paper',yref:'paper',x:x0,y:y1+0.03,text:'<b>'+p.t+'</b>',showarrow:false,xanchor:'left',yanchor:'bottom',font:{size:12.5,color:C.pd}});
-    E.forEach(e=>{const ys=PY.map((_,y)=>{const v=p.get(e,y); return v==null?null:v;});
-      tr.push(plTrace(e,ys,null,{xaxis:'x'+sfx,yaxis:'y'+sfx,showlegend:i===0,hovertemplate:'%{x}: <b>%{y:'+(p.hf||',.1f')+'}</b>'+(p.suffix||'')+'<extra>'+e.name+'</extra>'}));});
-  });
-  Plotly.newPlot(id,tr,L(lay),CFG);
-}
-function plCharts(E){
-  const per=PS.scale==='per', u=per?'per university':'total';
-  document.getElementById('plScaleNote').textContent='£m, '+u+(PS.set==='core'?' · core 136':' · all providers');
-  const m=(k)=>(e,y)=>{const v=plAmt(e,k,y); return v==null?null:v/1000;};
-  // BCI
-  Plotly.newPlot('chPlBci',E.map(e=>plTrace(e,PY.map((_,y)=>m('bci')(e,y)),null,{hovertemplate:'%{x}: <b>£%{y:.2f}m</b><extra>'+e.name+'</extra>'})),
-    L({height:470,margin:{l:70,r:20,t:10,b:70},yaxis:{title:{text:'£m, '+u+', real 2024/25',font:{size:12}},gridcolor:'#eeebf1',rangemode:'tozero'}}),CFG);
-  // indexed growth
-  Plotly.newPlot('chPlIdx',E.map(e=>{const raw=PY.map((_,y)=>e.s.bci[y]); const b=raw.find(v=>v>0); return plTrace(e,raw.map(v=>v==null||!b?null:v/b*100),null,{hovertemplate:'%{x}: <b>%{y:.0f}</b><extra>'+e.name+'</extra>'});}),
-    L({height:400,margin:{l:60,r:20,t:10,b:70},yaxis:{title:{text:'Index, first year = 100',font:{size:12}},gridcolor:'#eeebf1'}}),CFG);
-  // streams
-  plSub('chPlStreams',[{t:'Contract research (£m '+u+')',get:m('cr'),hf:'.2f',suffix:'m',tf:',.1f'},{t:'Consultancy (£m '+u+')',get:m('cons'),hf:'.2f',suffix:'m',tf:',.1f'},
-    {t:'Facilities & equipment (£m '+u+')',get:m('fac'),hf:'.2f',suffix:'m',tf:',.1f'},{t:'IP licensing (£m '+u+')',get:m('ip'),hf:'.2f',suffix:'m',tf:',.1f'}],2,720);
-  // mix
-  const st=[['cr','Contract research',C.pd],['cons','Consultancy',C.pink],['fac','Facilities & equipment',C.blue],['ip','IP licensing',C.green]];
-  const rev=E.slice().reverse(), tot=e=>st.reduce((s,k)=>s+(e.s[k[0]][LY]||0),0);
-  Plotly.newPlot('chPlMix',st.map(k=>({type:'bar',orientation:'h',name:k[1],y:rev.map(e=>plShort(e.name)),x:rev.map(e=>tot(e)?(e.s[k[0]][LY]||0)/tot(e)*100:0),marker:{color:k[2]},hovertemplate:'%{y}: %{x:.0f}% '+k[1]+'<extra></extra>'})),
-    L({barmode:'stack',height:Math.max(320,E.length*62+110),margin:{l:190,r:20,t:10,b:70},xaxis:{ticksuffix:'%',range:[0,100],gridcolor:'#eeebf1'},yaxis:{automargin:true}}),CFG);
-  document.getElementById('plMixSrc').textContent=PY[LY]+'. Share of BCI by stream; independent of the per-university switch.';
-  // who with
-  plSub('chPlSme',[{t:'SME BCI (£m '+u+')',get:m('sme'),hf:'.2f',suffix:'m',tf:',.1f'},{t:'Large-business BCI (£m '+u+')',get:m('lc'),hf:'.2f',suffix:'m',tf:',.1f'},
-    {t:'SME share of BCI (%)',get:(e,y)=>plRat(e,'sme','bci',100,y),hf:'.1f',suffix:'%',tf:'.0f'}],3,380);
-  // collaboration beyond contracts
-  plSub('chPlCollab',[{t:'CPD income (£m '+u+')',get:m('cpd'),hf:'.2f',suffix:'m',tf:',.1f'},{t:'Collaborative research (£m '+u+')',get:m('collab'),hf:'.2f',suffix:'m',tf:',.1f'},
-    {t:'Partner share of collaborative research (%)',get:(e,y)=>plRat(e,'cpart','collab',100,y),hf:'.1f',suffix:'%',tf:'.0f'}],3,400);
-  // spin-outs, staff, intensity
-  plSub('chPlSpin',[{t:'Surviving spin-outs ('+u+')',get:(e,y)=>plAmt(e,'spin',y),hf:'.1f',tf:',.1f'},{t:'Academic staff ('+u+')',get:(e,y)=>plAmt(e,'acad',y),hf:',.0f',tf:','},
-    {t:'BCI per academic (£000)',get:(e,y)=>plRat(e,'bci','acad',1,y),hf:'.1f',suffix:'k',tf:',.1f'},{t:'BCI as % of total university income',get:(e,y)=>plRat(e,'bci','inc',100,y),hf:'.1f',suffix:'%',tf:'.1f'}],2,720);
-}
-
 /* ---------- local economy ---------- */
 function plMedian(a){const s=a.filter(v=>v!=null&&isFinite(v)).sort((p,q)=>p-q); if(!s.length) return null; const m=Math.floor(s.length/2); return s.length%2?s[m]:(s[m-1]+s[m])/2;}
 function plEco(E){
@@ -301,6 +467,7 @@ function plEco(E){
   box.innerHTML=html;
 }
 
+
 /* ---------- editable PowerPoint report on the selected place (PptxGenJS, inlined) ---------- */
 function plPptx(){
   const msg=document.getElementById('plPptMsg');
@@ -309,90 +476,121 @@ function plPptx(){
   try{ plPptxBuild(); msg.textContent='Done: check your downloads.'; }catch(err){ console.error(err); msg.textContent='Could not build the report: '+err.message; }
 }
 function plPptxBuild(){
-  const E=plEntities(), P=E[0], B=E.slice(1), y=LY, area=PS.place&&plAreas(PS.level)[PS.place];
+  const E=plEntities(), P=E[0], B=E.slice(1), y=LY, area=plAreas(PS.level)[PS.place];
   const lvlTxt=PS.level==='itl1'?'ITL1 region':PS.level==='itl2'?'ITL2 sub-region':'travel-to-work area';
   const pp=new PptxGenJS(); pp.layout='LAYOUT_WIDE'; pp.title='NCUB place report: '+P.name;
   const PUR='3E1151',MID='60537F',PNK='FF0090',FONT_='Aptos', hx=c=>c.replace('#','');
-  const SRC='Source: HE-BCI via NCUB master panel, real 2024/25 prices. Income is recorded at each university\'s main campus, not where partners are located.';
+  const SRC='Source: HE-BCI via NCUB master panel, real 2024/25 prices; ONS BERD. Income is recorded at each university\'s main campus, not where partners are located.';
   const u=PS.scale==='per'?'per university':'total';
+  const strip=h=>String(h).replace(/<[^>]+>/g,'').replace(/&amp;/g,'&');
+  const storyText=id=>[...document.querySelectorAll('#'+id+' p')].map(p=>strip(p.innerHTML)).join('\n\n');
   let pg=1;
   const logo=(s,w)=>{ if(PL_LOGO&&PL_LOGO.length>40) s.addImage({data:w?PL_LOGO_W:PL_LOGO,x:0.4,y:w?0.4:0.35,w:w?2.4:0.56,h:0.6}); };
   let s=pp.addSlide(); s.background={color:PUR}; logo(s,true);
   s.addShape(pp.ShapeType.line,{x:0.5,y:3.3,w:12.3,h:0,line:{color:'FEDB00',width:2}});
-  s.addShape(pp.ShapeType.line,{x:0.5,y:3.3,w:0,h:4.2,line:{color:'FEDB00',width:2}});
   s.addText(P.name,{x:0.9,y:3.6,w:8.8,h:1.1,fontFace:'Georgia',bold:true,fontSize:34,color:'FFFFFF',fit:'shrink'});
-  s.addText('University–business collaboration in this '+lvlTxt+' · compared with '+(B.map(b=>b.name).join(', ')||'no benchmark'),{x:0.9,y:4.8,w:8.6,h:0.9,fontFace:FONT_,fontSize:15,color:'AAA5BB'});
+  s.addText('University–business collaboration in this '+lvlTxt+', from business R&D to outcomes · compared with '+(B.map(b=>b.name).join(', ')||'no benchmark'),{x:0.9,y:4.8,w:8.6,h:0.9,fontFace:FONT_,fontSize:15,color:'AAA5BB'});
   s.addText('Collaboration Progress Monitor · '+PY[y]+' · '+new Date().toLocaleDateString('en-GB',{month:'long',year:'numeric'}),{x:0.9,y:6.5,w:8,h:0.4,fontFace:FONT_,fontSize:12,color:'FFFFFF'});
   const body=(topic,finding,sub,panel)=>{
     const sl=pp.addSlide(); sl.background={color:'FFFFFF'}; logo(sl,false); pg++;
     sl.addText(topic,{x:1.34,y:0.3,w:11,h:0.3,fontFace:FONT_,bold:true,fontSize:11,color:PNK,charSpacing:2});
-    sl.addText(finding,{x:1.34,y:0.55,w:11.4,h:0.62,fontFace:FONT_,bold:true,fontSize:24,color:PUR,fit:'shrink'});
-    sl.addText(sub,{x:1.34,y:1.15,w:11,h:0.4,fontFace:FONT_,fontSize:14,color:MID});
+    sl.addText(finding,{x:1.34,y:0.55,w:11.4,h:0.62,fontFace:FONT_,bold:true,fontSize:22,color:PUR,fit:'shrink'});
+    sl.addText(sub,{x:1.34,y:1.15,w:11,h:0.4,fontFace:FONT_,fontSize:13,color:MID});
     if(panel){
       sl.addShape(pp.ShapeType.rect,{x:9.4,y:1.89,w:3.4,h:4.94,fill:{color:PUR},line:{color:PUR}});
       sl.addShape(pp.ShapeType.rect,{x:9.67,y:2.23,w:0.47,h:0.05,fill:{color:PNK},line:{color:PNK}});
       sl.addText(panel[0],{x:9.67,y:2.4,w:2.85,h:0.95,fontFace:FONT_,bold:true,fontSize:panel[0].length>9?20:32,color:'FFFFFF',fit:'shrink',valign:'top'});
       sl.addText(panel[1],{x:9.67,y:3.4,w:2.85,h:0.9,fontFace:FONT_,bold:true,fontSize:13,color:'FFFFFF',valign:'top',fit:'shrink'});
-      sl.addText(panel[2],{x:9.67,y:4.4,w:2.85,h:2.2,fontFace:FONT_,fontSize:12,color:'FFFFFF',valign:'top',fit:'shrink'});
+      sl.addText(panel[2],{x:9.67,y:4.4,w:2.85,h:2.2,fontFace:FONT_,fontSize:11.5,color:'FFFFFF',valign:'top',fit:'shrink'});
     }
     sl.addText(SRC,{x:0.55,y:6.99,w:11.2,h:0.25,fontFace:FONT_,fontSize:8,color:MID});
     sl.addText(String(pg).padStart(2,'0'),{x:12.3,y:6.99,w:0.5,h:0.25,fontFace:FONT_,bold:true,fontSize:9,color:PUR,align:'right'});
     return sl;
   };
-  const strip=h=>h.replace(/<[^>]+>/g,'');
-  const ins=plInsightList(E);
-  // 1 findings
-  let sl=body('Key findings',P.name+': key findings','Generated from the NCUB master panel · '+PY[y],null);
-  sl.addText(ins.slice(0,7).flatMap(i=>[{text:i[0].toUpperCase(),options:{bold:true,color:PNK,fontSize:10,breakLine:true}},{text:strip(i[1]),options:{color:PUR,fontSize:12.5,breakLine:true,paraSpaceAfter:6}}]),{x:0.55,y:1.65,w:12.2,h:5.2,fontFace:FONT_,valign:'top',fit:'shrink'});
-  // 2 at a glance table
-  sl=body('At a glance',P.name+' against '+(B.map(b=>b.name).join(' and ')||'benchmarks'),'Latest year, '+PY[y],[plFmt(plAmt(P,'bci',y),'gbp'),'BCI '+u,P.n[y]+' universities reporting.']);
-  const kp=[['Universities reporting',e=>e.n[y],'n'],['BCI '+u,e=>plAmt(e,'bci',y),'gbp'],['BCI per academic (£000)',e=>plRat(e,'bci','acad',1,y),'gbp1'],['SME share of BCI',e=>plRat(e,'sme','bci',100,y),'pct'],
-    ['BCI 5-yr CAGR',e=>plCagr(plBciSeries(e),y,5),'pcts'],['Spin-outs '+u,e=>plAmt(e,'spin',y),'n1'],['Partner share of collab. research',e=>plRat(e,'cpart','collab',100,y),'pct']];
-  const hdr=['Measure'].concat(E.map(e=>e.name)).map(t=>({text:t,options:{bold:true,color:'FFFFFF',fill:{color:PUR},fontSize:10}}));
-  sl.addTable([hdr].concat(kp.map(k=>[{text:k[0]}].concat(E.map(e=>({text:plFmt(k[1](e),k[2]),options:{align:'right'}}))))),{x:0.5,y:1.8,w:8.6,fontFace:FONT_,fontSize:10.5,color:PUR,border:{type:'solid',color:'EEEBF1',pt:0.75},rowH:0.38});
-  // 3 BCI trend
+  const gridOpt={valGridLine:{color:'EEEBF1',size:0.5},catAxisLabelFontSize:10,valAxisLabelFontSize:10,legendFontSize:10,showLegend:true,legendPos:'b'};
+  const chartBox={x:0.5,y:1.75,w:8.6,h:5.05};
+  const line=(slide,series,fmtc)=>slide.addChart(pp.charts.LINE,series.map(q=>({name:q.n,labels:q.l||PY,values:q.v})),Object.assign({},chartBox,gridOpt,{chartColors:series.map(q=>hx(q.c)),lineSize:3,lineDataSymbolSize:6,valAxisLabelFormatCode:fmtc||'#,##0.0'}));
+  const note=(sl,t)=>sl.addText(t,{x:0.5,y:1.7,w:12.3,h:5,fontFace:FONT_,fontSize:14,color:PUR,valign:'top',fit:'shrink'});
+  const rs=(arr,f)=>arr.map(f);
+  // 1 the story at a glance (all chapters)
+  let sl=body('Summary',P.name+': the story in brief','From business R&D to collaboration outcomes',null);
+  sl.addText([1,2,3,4,5,6].flatMap(i=>{const t=storyText('plStory'+i).split('\n\n')[0]||''; return t?[{text:t,options:{breakLine:true,paraSpaceAfter:8,bullet:true}}]:[];}),{x:0.55,y:1.7,w:12.2,h:5.1,fontFace:FONT_,fontSize:13,color:PUR,valign:'top',fit:'shrink'});
+  // 2 BERD context
+  const Bd=PLP.berd||{}, ser=plBerdSeries(E);
+  sl=body('1 · Context','Business R&D: the backdrop to collaboration',ser?'Business R&D, £m, real terms (ONS BERD)':'UK business expenditure on R&D, £bn (ONS BERD)',[Bd.uk?'£'+Bd.uk.values[Bd.uk.values.length-1].toFixed(1)+'bn':'–','UK business R&D, '+(Bd.uk?Bd.uk.years[Bd.uk.years.length-1]:''),storyText('plStory1').split('\n\n')[0]||'']);
+  if(ser){const yrs=[...new Set(ser.flatMap(q=>Object.keys(q.m).map(Number)))].sort(); line(sl,ser.map(q=>({n:q.name,c:q.e.col,l:yrs,v:yrs.map(k=>q.m[k]==null?null:+q.m[k].toFixed(0))})),'#,##0');}
+  else if(Bd.uk) line(sl,[{n:'UK business R&D (£bn)',c:PUR,l:Bd.uk.years,v:Bd.uk.values}],'0.0');
+  if(Bd.industry&&Bd.industry.rows.length){
+    const rows=Bd.industry.rows.slice().sort((a,b)=>b.pct-a.pct);
+    sl=body('1 · Context','Where business R&D is growing and falling','% change by broad industry group, '+Bd.industry.base+' to '+Bd.industry.last,[plPct(rows[0].pct,1),rows[0].g,'Largest increase. Largest fall: '+rows[rows.length-1].g+' ('+plPct(rows[rows.length-1].pct,1)+').']);
+    sl.addChart(pp.charts.BAR,[{name:'% change',labels:rows.map(r=>r.g),values:rows.map(r=>r.pct)}],Object.assign({},chartBox,gridOpt,{barDir:'bar',catAxisOrientation:'maxMin',chartColors:rows.map(r=>r.pct>=0?'00B388':r.pct>-10?'E8A600':'FF0090'),showLegend:false,showValue:true,dataLabelFontSize:8,dataLabelFormatCode:'0.0',valAxisLabelFormatCode:'0"%"'}));
+  }
+  if(!ser&&Bd.intl){
+    const rows=Bd.intl.rows.slice().sort((a,b)=>a.pct-b.pct);
+    sl=body('1 · Context','Business R&D growth across economies','% growth since '+Bd.intl.base,null);
+    sl.addChart(pp.charts.BAR,[{name:'%',labels:rows.map(r=>r.c),values:rows.map(r=>r.pct)}],Object.assign({},chartBox,{w:12.2},gridOpt,{barDir:'col',chartColors:rows.map(r=>r.c==='United Kingdom'?'FF0090':PUR),showLegend:false,showValue:true,dataLabelFontSize:8,dataLabelFormatCode:'0.0'}));
+  }
+  // 3 CPM table
+  const ps=plAllInd(P);
+  sl=body('2 · Indicators','The CPM indicators for '+P.name,'Latest year '+PY[y]+', '+u+'. ⏫ ≥10% · ⌃ 1–10% · — within 1% · ⌄ down 1–10% · ⏬ ≥10% down',null);
+  const arr=p=>p==null?'n/a':p>=10?'⏫':p>=1?'⌃':p>-1?'—':p>-10?'⌄':'⏬';
+  const hd=['Indicator',String(PY[y])].concat(PL_CMP).concat(B.map(b=>b.name)).map(t=>({text:t,options:{bold:true,color:'FFFFFF',fill:{color:PUR},fontSize:9}}));
+  const bsAll=B.map(b=>plAllInd(b));
+  sl.addTable([hd].concat(ps.map((r,i)=>[{text:r.name},{text:plFmt(r.st.cur,r.f),options:{align:'right',bold:true}}].concat(r.st.chg.map(p=>({text:arr(p)+(p==null?'':' '+plPct(p,0)),options:{align:'center'}}))).concat(bsAll.map(b=>({text:plFmt(b[i].st.cur,r.f),options:{align:'right'}}))))),
+    {x:0.5,y:1.7,w:12.3,fontFace:FONT_,fontSize:9.5,color:PUR,border:{type:'solid',color:'EEEBF1',pt:0.75},rowH:0.4});
+  // 4 above/at/below
+  sl=body('2 · Indicators','How many indicators are above or below their averages?','Number of the nine CPM indicators',['','Above, at or below','Compares the latest year with last year, the 5- and 10-year averages and 2018/19. “At” means within ±1%.']);
+  const names=PL_CMP, ent=E.map(e=>e.name);
+  const cnt=(e,j,k)=>plAllInd(e).filter(r=>plBucket(r.st.chg[j])===k).length;
+  const lab=[],ab=[],at=[],be=[];
+  PL_CMP.forEach((c,j)=>E.forEach(e=>{lab.push(c.replace('vs ','')+' · '+(e.key==='uk'?'UK':e.key==='eng'?'England':plShort(e.name))); ab.push(cnt(e,j,'above')); at.push(cnt(e,j,'at')); be.push(cnt(e,j,'below'));}));
+  sl.addChart(pp.charts.BAR,[{name:'Above',labels:lab,values:ab},{name:'At average',labels:lab,values:at},{name:'Below',labels:lab,values:be}],Object.assign({},chartBox,gridOpt,{barDir:'bar',barGrouping:'stacked',catAxisOrientation:'maxMin',chartColors:['00B388','E8C200','FF0090'],catAxisLabelFontSize:8,showValue:true,dataLabelFontSize:8}));
+  // 5 BCI trend
   const g5=plCagr(plBciSeries(P),y,5);
-  sl=body('Trend',P.name+': business collaboration income over time','£m '+u+', real 2024/25 prices',[g5==null?'n/a':plFmt(g5,'pcts'),'5-year CAGR','Dashed lines are benchmarks. '+(PS.set==='core'?'Core 136 universities.':'All reporting providers.')]);
-  const line=(slide,series,fmtc)=>slide.addChart(pp.charts.LINE,series.map(s=>({name:s.n,labels:PY,values:s.v})),{x:0.5,y:1.75,w:8.6,h:5.05,chartColors:series.map(s=>hx(s.c)),lineSize:3,lineDataSymbolSize:6,showLegend:true,legendPos:'b',legendFontSize:10,catAxisLabelFontSize:10,valAxisLabelFontSize:10,valGridLine:{color:'EEEBF1',size:0.5},valAxisLabelFormatCode:fmtc||'#,##0.0'});
+  sl=body('3 · Collaboration','Business collaboration income over time','£m '+u+', real 2024/25 prices',[g5==null?'n/a':plFmt(g5,'pcts'),'5-year CAGR',storyText('plStory2').split('\n\n').slice(-1)[0].slice(0,220)]);
   line(sl,E.map(e=>({n:e.name,c:e.col,v:PY.map((_,k)=>{const v=plAmt(e,'bci',k);return v==null?null:+(v/1000).toFixed(2);})})));
-  // 4 growth index
-  sl=body('Growth','Growth since the start of the series','Total BCI indexed, first year = 100',[g5==null?'n/a':plFmt(g5,'pcts'),'a year, last 5 years','Indexing lets places of different size be compared directly.']);
-  line(sl,E.map(e=>{const raw=PY.map((_,k)=>e.s.bci[k]);const b=raw.find(v=>v>0);return {n:e.name,c:e.col,v:raw.map(v=>v==null||!b?null:+(v/b*100).toFixed(1))};}),'0');
-  // 5 streams
-  const sts=[['cr','Contract research'],['cons','Consultancy'],['fac','Facilities & equipment'],['ip','IP licensing']];
-  sl=body('Composition','What the income is for','BCI by stream, £m '+u+', '+PY[y],[plFmt(plAmt(P,'bci',y),'gbp'),'BCI '+u,'Contract research, consultancy, facilities & equipment and IP licensing.']);
-  sl.addChart(pp.charts.BAR,E.map(e=>({name:e.name,labels:sts.map(k=>k[1]),values:sts.map(k=>{const v=plAmt(e,k[0],y);return v==null?0:+(v/1000).toFixed(2);})})),{x:0.5,y:1.75,w:8.6,h:5.05,barDir:'col',chartColors:E.map(e=>hx(e.col)),showLegend:true,legendPos:'b',legendFontSize:10,catAxisLabelFontSize:10,valAxisLabelFontSize:10,valGridLine:{color:'EEEBF1',size:0.5},showValue:true,dataLabelFontSize:8,dataLabelFormatCode:'0.0'});
-  // 6 mix 100%
-  const tot=e=>sts.reduce((a,k)=>a+(e.s[k[0]][y]||0),0);
-  sl=body('Composition','Mix of income streams','Share of BCI, '+PY[y],[plFmt(plRat(P,'sme','bci',100,y),'pct'),'of BCI is with SMEs','Benchmarks: '+(B.map(b=>b.name+' '+plFmt(plRat(b,'sme','bci',100,y),'pct')).join(', ')||'–')+'.']);
-  sl.addChart(pp.charts.BAR,sts.map((k,i)=>({name:k[1],labels:E.map(e=>e.name),values:E.map(e=>tot(e)?+((e.s[k[0]][y]||0)/tot(e)*100).toFixed(1):0)})),{x:0.5,y:1.75,w:8.6,h:5.05,barDir:'bar',barGrouping:'percentStacked',valAxisLabelFormatCode:'0%',catAxisOrientation:'maxMin',chartColors:['3E1151','FF0090','0085CA','00B388'],showLegend:true,legendPos:'b',legendFontSize:10,catAxisLabelFontSize:10,valAxisLabelFontSize:9});
-  // 7 SME share trend
-  sl=body('Who it is with','SME share of business collaboration income','% of BCI from SMEs',[plFmt(plRat(P,'sme','bci',100,y),'pct'),'SME share, '+PY[y],'SMEs versus large businesses as the source of BCI.']);
-  line(sl,E.map(e=>({n:e.name,c:e.col,v:PY.map((_,k)=>{const v=plRat(e,'sme','bci',100,k);return v==null?null:+v.toFixed(1);})})),'0');
-  // 8 spin-outs
-  sl=body('Spin-outs','Surviving spin-outs '+u,'CPM definition: HE-owned plus other spin-outs surviving 3+ years',[plFmt(plAmt(P,'spin',y),PS.scale==='per'?'n1':'n'),'spin-outs '+u+', '+PY[y],'Benchmarks: '+(B.map(b=>b.name+' '+plFmt(plAmt(b,'spin',y),PS.scale==='per'?'n1':'n')).join(', ')||'–')+'.']);
+  // 6 types x size (one slide per type)
+  [['Contract research','cr_sme','cr_lc'],['Consultancy','cons_sme','cons_lc'],['Facilities & equipment','fac_sme','fac_lc'],['IP licensing','lic_sme','lic_lc']].forEach(p=>{
+    sl=body('3 · Collaboration',p[0]+': SMEs and large businesses','£m '+u+' in '+P.name+(B.length?' (dashed = '+B[0].name+')':''),[plFmt(plAmt(P,p[1],y),'gbp'),'from SMEs, '+PY[y],'Large businesses: '+plFmt(plAmt(P,p[2],y),'gbp')+'.']);
+    const ser2=[{n:'SMEs · '+P.name,c:PUR,v:PY.map((_,k)=>{const v=plAmt(P,p[1],k);return v==null?null:+(v/1000).toFixed(2);})},{n:'Large · '+P.name,c:'FF0090',v:PY.map((_,k)=>{const v=plAmt(P,p[2],k);return v==null?null:+(v/1000).toFixed(2);})}];
+    line(sl,ser2,'#,##0.0');});
+  // 7 CAGR vs all places
+  const rows=plCagrData('bci'), col={}; E.forEach(e=>{if(e.key==='place') col[PS.place]=e.col; else if(e.key[0]==='x') col[e.id]=e.col;});
+  const top=rows.slice(0,40);
+  if(!top.some(r=>r.id===PS.place)){const me=rows.find(r=>r.id===PS.place); if(me) top.push(me);}
+  sl=body('4 · Growth','Five-year growth of collaboration income against all places',PY[y-5]+' to '+PY[y]+', compound annual growth, '+(PS.scale==='per'?'per university':'total'),[(rows.find(r=>r.id===PS.place)||{g:null}).g==null?'n/a':plFmt(rows.find(r=>r.id===PS.place).g,'pcts'),P.name+' a year','Rank is not the point: the chart shows where '+P.name+' sits in the range (pink).']);
+  sl.addChart(pp.charts.BAR,[{name:'CAGR %',labels:top.map(r=>plShort(r.name)),values:top.map(r=>+r.g.toFixed(1))}],Object.assign({},chartBox,gridOpt,{barDir:'bar',catAxisOrientation:'maxMin',chartColors:top.map(r=>col[r.id]?hx(col[r.id]):'CFC9DC'),showLegend:false,catAxisLabelFontSize:top.length>25?7:9,valAxisLabelFormatCode:'0"%"'}));
+  // 8 clusters
+  const grow=provs=>{const e=plAggregate(plSetF(provs)); return e.n[y]?plCagr(PY.map((_,k)=>plAmt(e,'bci',k)),y,5):null;};
+  const cats=[0,1,2,3,4].map(plClName);
+  sl=body('5 · Types of university','Growth by type of university',PY[y-5]+' to '+PY[y]+', 5-year CAGR of BCI',['','Types follow the NCUB BCI portfolio clusters.',storyText('plStory5')]);
+  sl.addChart(pp.charts.BAR,[{name:'UK',labels:cats,values:[0,1,2,3,4].map(i=>{const v=grow(PLP.provs.filter(p=>plClOf(p)===i));return v==null?0:+v.toFixed(1);})},{name:P.name,labels:cats,values:[0,1,2,3,4].map(i=>{const ps2=area.provs.filter(p=>plClOf(p)===i);const v=ps2.length?grow(ps2):null;return v==null?0:+v.toFixed(1);})}],Object.assign({},chartBox,gridOpt,{barDir:'col',chartColors:[PUR,'FF0090'],catAxisLabelFontSize:8,showValue:true,dataLabelFontSize:8,dataLabelFormatCode:'0.0'}));
+  // 9 IP, patents, spin-outs
+  sl=body('6 · Outcomes','IP licensing income, '+u,'£m, real prices; stacked by business size',[plFmt(plAmt(P,'lic',y),'gbp'),'licensing income, '+PY[y],storyText('plStory6').slice(0,260)]);
+  sl.addChart(pp.charts.BAR,[{name:'Large businesses',labels:PY,values:PY.map((_,k)=>{const v=plAmt(P,'lic_lc',k);return v==null?0:+(v/1000).toFixed(2);})},{name:'SMEs',labels:PY,values:PY.map((_,k)=>{const v=plAmt(P,'lic_sme',k);return v==null?0:+(v/1000).toFixed(2);})}],Object.assign({},chartBox,gridOpt,{barDir:'col',barGrouping:'stacked',chartColors:[PUR,'FF0090']}));
+  sl=body('6 · Outcomes','Patents '+u,'Filed, granted, and filed by external parties with a university co-applicant',null);
+  line(sl,[['patf','Filed'],['patg','Granted'],['pate','External parties']].map((k,i)=>({n:k[1],c:[PUR,'FF0090','0085CA'][i],v:PY.map((_,j)=>{const v=plAmt(P,k[0],j);return v==null?null:+v.toFixed(2);})})),'0.0');
+  sl=body('6 · Outcomes','Surviving spin-outs '+u,'CPM definition: HE-owned plus other spin-outs surviving 3+ years',[plFmt(plAmt(P,'spin',y),PS.scale==='per'?'n1':'n'),'spin-outs '+u+', '+PY[y],'Benchmarks: '+(B.map(b=>b.name+' '+plFmt(plAmt(b,'spin',y),PS.scale==='per'?'n1':'n')).join(', ')||'–')+'.']);
   line(sl,E.map(e=>({n:e.name,c:e.col,v:PY.map((_,k)=>{const v=plAmt(e,'spin',k);return v==null?null:+v.toFixed(2);})})),'0.0');
-  // 9 universities
-  const a=plAreas(PS.level)[PS.place];
-  sl=body('Universities','Universities in '+P.name,'Main campus in this '+lvlTxt+', '+PY[y],[String(a.provs.length),'universities','Listed by business collaboration income.']);
+  // 10 universities
+  sl=body('7 · Place','Universities in '+P.name,'Main campus in this '+lvlTxt+', '+PY[y],[String(area.provs.length),'universities','Listed by business collaboration income.']);
   const h2=['University','BCI portfolio group','BCI','Spin-outs'].map(t=>({text:t,options:{bold:true,color:'FFFFFF',fill:{color:PUR},fontSize:10}}));
-  sl.addTable([h2].concat(a.provs.slice().sort((p,q)=>(q.s.bci[y]||0)-(p.s.bci[y]||0)).slice(0,12).map(p=>[{text:p.n},{text:p.cl?p.cl.split(' (')[0]:'–'},{text:plFmt(p.s.bci[y],'gbp'),options:{align:'right'}},{text:plFmt(p.s.spin[y],'n'),options:{align:'right'}}])),
+  sl.addTable([h2].concat(area.provs.slice().sort((p,q)=>(q.s.bci[y]||0)-(p.s.bci[y]||0)).slice(0,12).map(p=>[{text:p.n},{text:p.cl?p.cl.split(' (')[0]:'–'},{text:plFmt(p.s.bci[y],'gbp'),options:{align:'right'}},{text:plFmt(p.s.spin[y],'n'),options:{align:'right'}}])),
     {x:0.5,y:1.8,w:8.6,colW:[3.6,2.6,1.2,1.2],fontFace:FONT_,fontSize:10,color:PUR,border:{type:'solid',color:'EEEBF1',pt:0.75},rowH:0.32});
-  // 10 local economy
-  const tIds=[...new Set(a.provs.map(p=>p.t).filter(Boolean))];
+  const tIds=[...new Set(area.provs.map(p=>p.t).filter(Boolean))];
   if(tIds.length){
-    sl=body('Local economy','The local economy around '+P.name,'Travel-to-work areas hosting a university',[String(tIds.length),'travel-to-work area'+(tIds.length>1?'s':''),'Types follow the NCUB five-way typology (productivity, knowledge intensity, industrial legacy).']);
+    sl=body('7 · Place','The local economy around '+P.name,'Travel-to-work areas hosting a university',[String(tIds.length),'travel-to-work area'+(tIds.length>1?'s':''),storyText('plStory7').slice(0,260)]);
     const h3=['TTWA','Type','KI jobs','GVA per job','Jobs'].map(t=>({text:t,options:{bold:true,color:'FFFFFF',fill:{color:PUR},fontSize:10}}));
     sl.addTable([h3].concat(tIds.slice(0,12).map(id=>{const c=PLP.ttwa[id];return [{text:c.name},{text:c.type||'–'},{text:c.ki!=null?(c.ki*100).toFixed(0)+'%':'–',options:{align:'right'}},{text:plFmt(c.gva,'gbp0'),options:{align:'right'}},{text:plFmt(c.jobs,'n'),options:{align:'right'}}];})),
       {x:0.5,y:1.8,w:8.6,colW:[2.4,2.8,1.0,1.4,1.0],fontFace:FONT_,fontSize:10,color:PUR,border:{type:'solid',color:'EEEBF1',pt:0.75},rowH:0.32});
   }
-  // 11 notes
   sl=body('Method','Reading this report','Definitions and caveats',null);
   sl.addText([
-    {text:'Where it is recorded. ',options:{bold:true,color:PNK,breakLine:false}},{text:'Income is recorded where the university is based (main-campus TTWA); it does not show where partners are located or where collaboration took place.',options:{breakLine:true,paraSpaceAfter:8}},
-    {text:'Per university. ',options:{bold:true,color:PNK}},{text:'Per-university figures divide by the number of providers reporting in each year, so places with many providers can be compared with places with few. Small providers pull averages down.',options:{breakLine:true,paraSpaceAfter:8}},
-    {text:'BCI. ',options:{bold:true,color:PNK}},{text:'Contract research, consultancy, facilities & equipment and IP income from SMEs and large businesses; excludes CPD. Real 2024/25 prices.',options:{breakLine:true,paraSpaceAfter:8}},
-    {text:'Benchmarks. ',options:{bold:true,color:PNK}},{text:'England = providers in English regions. UK = all providers in the HE-BCI panel.',options:{breakLine:true}}],
+    {text:'Where it is recorded. ',options:{bold:true,color:PNK}},{text:'Income is recorded where the university is based (main-campus place); it does not show where partners are located.',options:{breakLine:true,paraSpaceAfter:8}},
+    {text:'Per university. ',options:{bold:true,color:PNK}},{text:'Per-university figures divide by the providers reporting each year, so places with many providers can be compared with places with few.',options:{breakLine:true,paraSpaceAfter:8}},
+    {text:'Real terms. ',options:{bold:true,color:PNK}},{text:'Money is deflated to 2024/25 prices with the CPM price index. BCI covers contract research, consultancy, facilities & equipment and IP income; excludes CPD.',options:{breakLine:true,paraSpaceAfter:8}},
+    {text:'Business R&D. ',options:{bold:true,color:PNK}},{text:'ONS BERD. Regional series require the input/berd_region.csv file; otherwise the UK total is shown.',options:{breakLine:true,paraSpaceAfter:8}},
+    {text:'Benchmarks. ',options:{bold:true,color:PNK}},{text:'England = providers in English regions. UK = all providers in the HE-BCI panel.'}],
     {x:0.55,y:1.7,w:12,h:4.5,fontFace:FONT_,fontSize:14,color:PUR,valign:'top'});
   pp.writeFile({fileName:'NCUB_place_report_'+P.name.replace(/[^A-Za-z0-9]+/g,'_')+'.pptx'});
 }

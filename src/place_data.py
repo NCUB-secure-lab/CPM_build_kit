@@ -49,15 +49,31 @@ ITL2_NAMES = {
     "TLN0": "Northern Ireland",
 }
 
-# metric key -> panel column(s) (summed across providers in an area)
-METRIC_COLS = {
-    "bci": "bci_total", "sme": "bci_sme", "lc": "bci_lc",
-    "cr": "bci_contract_research", "cons": "bci_consultancy",
-    "fac": "bci_facilities", "ip": "bci_ip",
-    "cpd": "cpd_tot_rev_000gbp", "collab": "cr_all_total",
-    "spin": "n_spinouts_surv3", "spininv": "external_investment_spin",
-    "acad": "acad_all", "inc": "total_income_000gbp", "regen": "regen_income_000gbp",
+# metric key -> panel column (summed across providers in an area).
+# NB: master_panel.xlsx labels its BCI / CPD / licensing / HE-funds columns "real 2024/25" but they match the
+# nominal CPM_master values (the main dashboard deflates them with ay_cpi), so we deflate them here too.
+NOMINAL_MONEY = {   # key -> list of source columns (summed) that are NOMINAL and need deflating
+    "bci": ["bci_total"], "sme": ["bci_sme"], "lc": ["bci_lc"],
+    "cr": ["bci_contract_research"], "cons": ["bci_consultancy"], "fac": ["bci_facilities"], "ip": ["bci_ip"],
+    "cpd": ["cpd_tot_rev_000gbp"], "ukind": ["hefunds_uk_industry"],
+    "cr_sme": ["contract_int_v_sme_000gbp"], "cr_lc": ["contract_int_v_lc_000gbp"],
+    "cons_sme": ["int_v_consult_sme_000gbp"], "cons_lc": ["int_v_consult_lc_000gbp"],
+    "fac_sme": ["int_v_fe_sme_000gbp"], "fac_lc": ["int_v_fe_lc_000gbp"],
+    "lic": [f"license_inc_{t}_{z}_000gbp" for t in ("nsw", "ip", "sw") for z in ("nc", "lc", "sme")],
+    "lic_sme": [f"license_inc_{t}_sme_000gbp" for t in ("nsw", "ip", "sw")],
+    "lic_lc": [f"license_inc_{t}_lc_000gbp" for t in ("nsw", "ip", "sw")],
 }
+ALREADY_REAL = {"inc": "total_income_000gbp", "regen": "regen_income_000gbp", "collab": "cr_all_total"}
+COUNTS = {
+    "spin": ["n_spinouts_surv3"], "acad": ["acad_all"],
+    "nsme": ["int_n_consult_sme", "int_n_fe_sme", "contract_int_n_sme"],
+    "nlc": ["int_n_consult_lc", "int_n_fe_lc", "contract_int_n_lc"],
+    "licn": ["nonsoftware_sme", "nonsoftware_lc", "software_sme", "software_lc"],
+    "licn_sme": ["nonsoftware_sme", "software_sme"], "licn_lc": ["nonsoftware_lc", "software_lc"],
+    "patf": ["n_patents_filed"], "patg": ["n_patents_granted"], "pate": ["n_external_patents"], "disc": ["n_disclosures"],
+}
+METRIC_COLS = {k: v[0] for k, v in {**NOMINAL_MONEY, **COUNTS}.items()}
+METRIC_COLS.update(ALREADY_REAL)
 CTX_TTWA = ["ttwa_type", "ttwa_composite_pct", "ttwa_productivity_pct", "ttwa_knowledge_pct",
             "ttwa_legacy_inv_pct", "ttwa_gva_per_job_2023", "ttwa_ki_share", "ttwa_legacy_share",
             "ttwa_jobs_bres2024", "ttwa_jobs_density", "itl2_berd_per_job"]
@@ -67,6 +83,14 @@ def load_panel(path=PANEL_PATH):
     d = pd.read_excel(path, sheet_name="Panel")
     d = d.copy()
     d["cr_partner"] = d["cr_all_partner_cash"].fillna(0) + d["cr_all_partner_inkind"].fillna(0)
+    cpi = d["ay_cpi"] / 100.0
+    # create one real (money) or summed (count) column per metric key, named "m_<key>"
+    for k, cols in NOMINAL_MONEY.items():
+        d["m_" + k] = d[cols].sum(axis=1, min_count=1) / cpi
+    for k, col in ALREADY_REAL.items():
+        d["m_" + k] = d[col]
+    for k, cols in COUNTS.items():
+        d["m_" + k] = d[cols].sum(axis=1, min_count=1)
     d["itl1_name"] = d["campus_itl2"].astype(str).str[:3].map(ITL1_NAMES)
     # providers with no campus ITL2 fall back to their HESA region (names match ITL1)
     d["itl1_name"] = d["itl1_name"].fillna(d["region_of_he_provider"])
@@ -97,8 +121,9 @@ def build_place(path=PANEL_PATH):
             "lat": _num(base["campus_lat"]), "lon": _num(base["campus_lon"]),
             "s": {},
         }
-        for k, col in METRIC_COLS.items():
-            rec["s"][k] = [_num(v) for v in g[col].tolist()]
+        gg = d[d.ukprn == ukprn].set_index("academic_year").reindex(years)
+        for k in METRIC_COLS:
+            rec["s"][k] = [_num(v) for v in gg["m_" + k].tolist()]
         rec["s"]["cpart"] = [_num(v) for v in g["cr_partner"].tolist()]
         provs.append(rec)
         if rec["t"] and rec["t"] not in ttwas:
@@ -115,12 +140,57 @@ def build_place(path=PANEL_PATH):
             itl2s[rec["i2"]] = {"name": ITL2_NAMES.get(rec["i2"], rec["i2"]),
                                 "berd": _num(base["itl2_berd_per_job"]),
                                 "r": ITL1_NAMES.get(rec["i2"][:3])}
+    cpi = {y: _num(v) for y, v in d.groupby("academic_year")["ay_cpi"].first().items()}
     return {
+        "cpi": cpi, "berd": load_berd(),
         "years": years, "provs": provs, "ttwa": ttwas, "itl2": itl2s,
         "itl1": sorted(set(ITL1_NAMES.values())),
-        "metricCols": {k: v for k, v in METRIC_COLS.items()},
+        "metricCols": METRIC_COLS,
         "note": "£000, real 2024/25 prices. Income is recorded where the university is based (main-campus TTWA); it does not show where partners are located or where collaboration took place.",
     }
+
+
+def load_berd():
+    """Context data on business R&D (BERD). Everything is optional; missing files are skipped.
+    input/berd_region.csv          year,area,level,value,price   (value £m; price = real|nominal) ONS BERD by ITL1/ITL2/UK/England
+    input/berd_industry.csv        group,year,value              (UK BERD by broad industry group) -> % change baseline→last
+    input/berd_industry_change.csv group,change_pct,baseline,last  (seed digitised from NCUB 2025; used if berd_industry.csv absent)
+    input/berd_international.csv   economy,growth_pct,baseline  (seed digitised from NCUB 2025 / MSTI OECD)
+    """
+    import json
+    out = {"region": None, "industry": None, "intl": None, "uk": None}
+    p = os.path.join(INPUT_DIR, "berd_region.csv")
+    if os.path.exists(p):
+        r = pd.read_csv(p)
+        r.columns = [c.strip().lower() for c in r.columns]
+        if {"year", "area", "value"} <= set(r.columns) and len(r):
+            if "level" not in r.columns: r["level"] = ""
+            if "price" not in r.columns: r["price"] = "real"
+            out["region"] = [{"y": int(a), "a": str(b), "l": str(c), "v": float(v), "p": str(q).lower()}
+                             for a, b, c, v, q in zip(r.year, r.area, r.level, r.value, r.price) if pd.notna(v)]
+    p = os.path.join(INPUT_DIR, "berd_industry.csv")
+    q = os.path.join(INPUT_DIR, "berd_industry_change.csv")
+    if os.path.exists(p):
+        r = pd.read_csv(p); r.columns = [c.strip().lower() for c in r.columns]
+        yrs = sorted(r.year.unique()); b, l = yrs[-2] if len(yrs) > 1 else yrs[0], yrs[-1]
+        pv = r.pivot_table(index="group", columns="year", values="value", aggfunc="sum")
+        rows = [{"g": g, "pct": float((pv.loc[g, l] / pv.loc[g, b] - 1) * 100)} for g in pv.index if pv.loc[g, b] and pd.notna(pv.loc[g, b])]
+        out["industry"] = {"rows": rows, "base": int(b), "last": int(l), "src": "ONS BERD (input/berd_industry.csv)"}
+    elif os.path.exists(q):
+        r = pd.read_csv(q); r.columns = [c.strip().lower() for c in r.columns]
+        out["industry"] = {"rows": [{"g": g, "pct": float(v)} for g, v in zip(r.group, r.change_pct)],
+                           "base": int(r.baseline.iloc[0]), "last": int(r["last"].iloc[0]), "src": "NCUB (2025), based on ONS data 2024 (digitised from the NCUB figure)"}
+    p = os.path.join(INPUT_DIR, "berd_international.csv")
+    if os.path.exists(p):
+        r = pd.read_csv(p); r.columns = [c.strip().lower() for c in r.columns]
+        out["intl"] = {"rows": [{"c": c, "pct": float(v)} for c, v in zip(r.economy, r.growth_pct)], "base": int(r.baseline.iloc[0]),
+                       "src": "NCUB (2025), based on ONS data 2024 and MSTI OECD (2025) (digitised from the NCUB figure)"}
+    p = os.path.join(INPUT_DIR, "context_cache.json")
+    if os.path.exists(p):
+        b = json.load(open(p, encoding="utf-8")).get("berd")
+        if b:
+            out["uk"] = {"years": b["years"], "values": b["values"], "unit": "£bn", "src": "UK business enterprise R&D as shown in the NCUB 2025 context figure"}
+    return out
 
 
 # ───────────────── pandas helpers for the PowerPoint reports ─────────────────
@@ -141,8 +211,7 @@ def area_year_table(d, level, core_only=False):
     x = d[d[col].notna()]
     if core_only:
         x = x[x["inst_panel"] == "core"]
-    cols = {k: v for k, v in METRIC_COLS.items()}
-    agg = {k: (v, "sum") for k, v in cols.items()}
+    agg = {k: ("m_" + k, "sum") for k in METRIC_COLS}
     agg["n_uni"] = ("ukprn", "nunique")
     t = x.groupby([col, "academic_year"]).agg(**agg).reset_index().rename(columns={col: "area"})
     return t

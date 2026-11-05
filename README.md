@@ -62,19 +62,20 @@ python src/build_dashboard.py /path/to/new_panel.csv /path/to/dashboard.html
 - `input/CPM_master.xlsx` – HE-BCI provider panel (main dashboard data). Spin-outs follow the CPM
   definition (HE-owned + other spin-outs, 3+ years surviving), cross-checked against `table-4e.csv`.
 - `input/master_panel.xlsx` – university × year panel with campus ITL2, TTWA and local-economy
-  typology (real 2024/25 prices, £000). Powers the **Place** sub-tab
-  (Trends → Research and Innovation → Place) and the PowerPoint reports.
+  typology (real 2024/25 prices, £000). Powers the **Place explorer** tab (pick an ITL1 / ITL2 / TTWA,
+  compare with England, the UK or chosen places; income shown per university or total) and the PowerPoint reports.
 - `input/NCUB_guide_presentations.pptx` – NCUB slide template used for the reports.
 
 ## Place reports (editable PowerPoint)
 
 ```bash
-python src/build_place_reports.py              # UK overview + every ITL1, ITL2 and TTWA
+python src/build_place_reports.py              # one report per ITL1, ITL2 and TTWA
 python src/build_place_reports.py --only itl1  # or: uk | itl2 | ttwa
 ```
 
 Writes `output/place_reports/`. Charts are native PowerPoint charts (right-click → Edit data).
-The dashboard's Place tab also offers an in-browser PowerPoint download for any selected area.
+The Place explorer tab also builds a report in the browser for whichever place and benchmarks are selected
+(the PowerPoint library is embedded in the HTML, so no internet connection is needed for that button).
 Note: income is recorded at each university's main campus, not where its partners are located.
 ITL2 names follow the ONS ITL list; check `ITL2_NAMES` in `src/place_data.py` if boundaries change.
 
@@ -264,3 +265,8 @@ github.com/martinjc/UK-GeoJSON, then simplify with shapely
 3 dp) and write features with a `properties.region` field matching the
 region names in the CSV ("Eastern" → "East of England",
 "Yorkshire and the Humber" → "Yorkshire and The Humber").
+
+## Place explorer: story-led, with business R&D context
+Chapter 1 uses ONS BERD. The UK series and the industry / international charts come from `input/berd_industry_change.csv` and `input/berd_international.csv` (digitised from NCUB figures).
+For the picked place's own business R&D trend and growth vs UK/England, add `input/berd_region.csv` (see `berd_region_TEMPLATE.csv`: year,area,level,value,price[real|nominal]; area = ITL1 name, "England" or "United Kingdom"). Nominal values are deflated with the CPM price index.
+Note: master_panel money columns are nominal; place_data.py deflates them to 2024/25 prices.
