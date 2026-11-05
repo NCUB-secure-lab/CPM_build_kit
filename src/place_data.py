@@ -62,6 +62,9 @@ NOMINAL_MONEY = {   # key -> list of source columns (summed) that are NOMINAL an
     "lic": [f"license_inc_{t}_{z}_000gbp" for t in ("nsw", "ip", "sw") for z in ("nc", "lc", "sme")],
     "lic_sme": [f"license_inc_{t}_sme_000gbp" for t in ("nsw", "ip", "sw")],
     "lic_lc": [f"license_inc_{t}_lc_000gbp" for t in ("nsw", "ip", "sw")],
+    "ind_eu": ["hefunds_eu_industry"], "ind_non": ["hefunds_noneu_industry"],
+    "ext": ["external_investment_spin"],            # estimated external investment in active spin-outs
+    "sp_turn": ["sp_turn_nom"],                      # spin-out turnover (table-4e)
 }
 ALREADY_REAL = {"inc": "total_income_000gbp", "regen": "regen_income_000gbp", "collab": "cr_all_total"}
 COUNTS = {
@@ -70,6 +73,8 @@ COUNTS = {
     "nlc": ["int_n_consult_lc", "int_n_fe_lc", "contract_int_n_lc"],
     "licn": ["nonsoftware_sme", "nonsoftware_lc", "software_sme", "software_lc"],
     "licn_sme": ["nonsoftware_sme", "software_sme"], "licn_lc": ["nonsoftware_lc", "software_lc"],
+    "sp_new": ["sp_new_n"], "staff_su": ["staff_startup"], "stud_su": ["student_startup"],
+    "sp_fte": ["spin_fte"], "staff_fte": ["staff_fte"], "stud_fte": ["student_fte"],
     "patf": ["n_patents_filed"], "patg": ["n_patents_granted"], "pate": ["n_external_patents"], "disc": ["n_disclosures"],
 }
 METRIC_COLS = {k: v[0] for k, v in {**NOMINAL_MONEY, **COUNTS}.items()}
@@ -79,9 +84,43 @@ CTX_TTWA = ["ttwa_type", "ttwa_composite_pct", "ttwa_productivity_pct", "ttwa_kn
             "ttwa_jobs_bres2024", "ttwa_jobs_density", "itl2_berd_per_job"]
 
 
+def _merge_t4e(d):
+    """Add spin-out detail from HESA table-4e: newly registered firms, staff/student start-ups, FTE, turnover."""
+    p = os.path.join(INPUT_DIR, "table-4e.csv")
+    cols = ["sp_new_n", "staff_startup", "student_startup", "spin_fte", "staff_fte", "student_fte", "sp_turn_nom"]
+    if not os.path.exists(p):
+        for c in cols: d[c] = np.nan
+        return d
+    t = pd.read_csv(p, skiprows=10, encoding="utf-8-sig")
+    t["Value"] = pd.to_numeric(t["Value"], errors="coerce").fillna(0)
+    t = t.drop_duplicates(subset=["UKPRN", "Academic Year", "Metric", "Category Marker", "Value"])
+    cpm = ["Spin-outs with some HE provider ownership", "Other spin-outs"]
+    def piv(metric):
+        x = t[t["Metric"].str.startswith(metric)]
+        return x.pivot_table(index=["UKPRN", "Academic Year"], columns="Category Marker", values="Value", aggfunc="sum").fillna(0)
+    out = pd.DataFrame()
+    n = piv("Number (of newly registered")
+    out["sp_new_n"] = n.reindex(columns=cpm).fillna(0).sum(axis=1)
+    sv = piv("Number still active which have survived")
+    out["staff_startup"] = sv.get("Staff start-ups"); out["student_startup"] = sv.get("Student start-ups")
+    f = piv("Estimated current employment")
+    out["spin_fte"] = f.reindex(columns=cpm).fillna(0).sum(axis=1)
+    out["staff_fte"] = f.get("Staff start-ups"); out["student_fte"] = f.get("Student start-ups")
+    tv = piv("Estimated current turnover")
+    out["sp_turn_nom"] = tv.reindex(columns=cpm).fillna(0).sum(axis=1)
+    out = out.reset_index().rename(columns={"UKPRN": "ukprn", "Academic Year": "academic_year"})
+    for c in cols:
+        if c not in out.columns: out[c] = np.nan
+    return d.merge(out, on=["ukprn", "academic_year"], how="left")
+
+
 def load_panel(path=PANEL_PATH):
     d = pd.read_excel(path, sheet_name="Panel")
     d = d.copy()
+    d = _merge_t4e(d)
+    # one anomalous return (> £20bn from a single provider-year) is excluded, as in the national dashboard
+    ext = pd.to_numeric(d["external_investment_spin"], errors="coerce")
+    d["external_investment_spin"] = ext.where(ext / (d["ay_cpi"] / 100.0) <= 2.0e7)
     d["cr_partner"] = d["cr_all_partner_cash"].fillna(0) + d["cr_all_partner_inkind"].fillna(0)
     cpi = d["ay_cpi"] / 100.0
     # create one real (money) or summed (count) column per metric key, named "m_<key>"
@@ -142,7 +181,7 @@ def build_place(path=PANEL_PATH):
                                 "r": ITL1_NAMES.get(rec["i2"][:3])}
     cpi = {y: _num(v) for y, v in d.groupby("academic_year")["ay_cpi"].first().items()}
     return {
-        "cpi": cpi, "berd": load_berd(),
+        "cpi": cpi, "berd": load_berd(cpi),
         "years": years, "provs": provs, "ttwa": ttwas, "itl2": itl2s,
         "itl1": sorted(set(ITL1_NAMES.values())),
         "metricCols": METRIC_COLS,
@@ -150,7 +189,7 @@ def build_place(path=PANEL_PATH):
     }
 
 
-def load_berd():
+def load_berd(cpi=None):
     """Context data on business R&D (BERD). Everything is optional; missing files are skipped.
     input/berd_region.csv          year,area,level,value,price   (value £m; price = real|nominal) ONS BERD by ITL1/ITL2/UK/England
     input/berd_industry.csv        group,year,value              (UK BERD by broad industry group) -> % change baseline→last
@@ -158,7 +197,8 @@ def load_berd():
     input/berd_international.csv   economy,growth_pct,baseline  (seed digitised from NCUB 2025 / MSTI OECD)
     """
     import json
-    out = {"region": None, "industry": None, "intl": None, "uk": None}
+    out = {"region": None, "industry": None, "intl": None, "uk": None, "macro": None, "fdi": None, "official": None}
+    _berd_official(out, cpi)
     p = os.path.join(INPUT_DIR, "berd_region.csv")
     if os.path.exists(p):
         r = pd.read_csv(p)
@@ -170,13 +210,15 @@ def load_berd():
                              for a, b, c, v, q in zip(r.year, r.area, r.level, r.value, r.price) if pd.notna(v)]
     p = os.path.join(INPUT_DIR, "berd_industry.csv")
     q = os.path.join(INPUT_DIR, "berd_industry_change.csv")
-    if os.path.exists(p):
+    if out["industry"] and not os.path.exists(p):
+        pass
+    elif os.path.exists(p):
         r = pd.read_csv(p); r.columns = [c.strip().lower() for c in r.columns]
         yrs = sorted(r.year.unique()); b, l = yrs[-2] if len(yrs) > 1 else yrs[0], yrs[-1]
         pv = r.pivot_table(index="group", columns="year", values="value", aggfunc="sum")
         rows = [{"g": g, "pct": float((pv.loc[g, l] / pv.loc[g, b] - 1) * 100)} for g in pv.index if pv.loc[g, b] and pd.notna(pv.loc[g, b])]
         out["industry"] = {"rows": rows, "base": int(b), "last": int(l), "src": "ONS BERD (input/berd_industry.csv)"}
-    elif os.path.exists(q):
+    elif os.path.exists(q) and not out["industry"]:
         r = pd.read_csv(q); r.columns = [c.strip().lower() for c in r.columns]
         out["industry"] = {"rows": [{"g": g, "pct": float(v)} for g, v in zip(r.group, r.change_pct)],
                            "base": int(r.baseline.iloc[0]), "last": int(r["last"].iloc[0]), "src": "NCUB (2025), based on ONS data 2024 (digitised from the NCUB figure)"}
@@ -185,12 +227,82 @@ def load_berd():
         r = pd.read_csv(p); r.columns = [c.strip().lower() for c in r.columns]
         out["intl"] = {"rows": [{"c": c, "pct": float(v)} for c, v in zip(r.economy, r.growth_pct)], "base": int(r.baseline.iloc[0]),
                        "src": "NCUB (2025), based on ONS data 2024 and MSTI OECD (2025) (digitised from the NCUB figure)"}
+    for key, f in (("macro", "regional_macro.csv"), ("fdi", "fdi_projects.csv")):
+        p = os.path.join(INPUT_DIR, f)
+        if os.path.exists(p):
+            r = pd.read_csv(p); r.columns = [c.strip().lower() for c in r.columns]
+            out[key] = r.where(pd.notna(r), None).to_dict("records")
     p = os.path.join(INPUT_DIR, "context_cache.json")
     if os.path.exists(p):
         b = json.load(open(p, encoding="utf-8")).get("berd")
         if b:
             out["uk"] = {"years": b["years"], "values": b["values"], "unit": "£bn", "src": "UK business enterprise R&D as shown in the NCUB 2025 context figure"}
     return out
+
+
+def _norm(x):
+    import re
+    return re.sub(r"[^a-z0-9]", "", str(x).lower().replace("&", "and"))
+
+
+def _berd_official(out, cpi):
+    """ONS BERD 2024 official tables (input/berd2024official.xlsx): Table 7a (ITL1), 18 (ITL2), 5 (broad product groups)."""
+    p = os.path.join(INPUT_DIR, "berd2024official.xlsx")
+    if not os.path.exists(p):
+        return
+    import openpyxl
+    wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
+    def num(v):
+        try: return float(v)
+        except (TypeError, ValueError): return None
+    def rows_of(ws):
+        return [list(r) for r in ws.iter_rows(values_only=True)]
+    region, dropped = [], []
+    # Table 7a: ITL1 + UK + England, columns: code, name, 2022, 2023, 2024, %
+    r7 = rows_of(wb["7"]); years = None
+    for r in r7:
+        if r and r[0] == "Area Code": years = [2022, 2023, 2024]
+        if years is None or r[0] is None or not str(r[0])[:1] in "KESWN" or len(str(r[0])) != 9: continue
+        if str(r[0]).startswith("Table"): continue
+        if r[1] is None or r[2] is None: continue
+        for y, v in zip(years, r[2:5]):
+            if num(v) is not None: region.append({"y": y, "a": {"United Kingdom": "United Kingdom"}.get(r[1], r[1]), "l": "ITL1", "v": num(v), "p": "nominal"})
+        if len(region) >= 3 * 14: break          # table 7a only (7b follows)
+    # Table 18: ITL2 (names changed between ITL 2021 and 2025, so match on normalised names)
+    names = {_norm(v): v for v in ITL2_NAMES.values()}
+    def match(n):
+        k = _norm(n)
+        if k in names: return names[k]
+        for kk, vv in names.items():
+            if len(k) > 8 and (kk.startswith(k) or k.startswith(kk)): return vv
+        return None
+    for r in rows_of(wb["18"]):
+        if not r or r[0] is None or r[1] is None: continue
+        m = match(r[0])
+        if m is None:
+            if r[0] not in ("United Kingdom", "Country or region") and not str(r[0]).startswith(("Table", "Source", "Return", "Worksheet", "(Des", "This", "Some", "All")): dropped.append(str(r[0]))
+            continue
+        for y, v in zip((2022, 2023, 2024), r[1:4]):
+            if num(v) is not None: region.append({"y": y, "a": m, "l": "ITL2", "v": num(v), "p": "nominal"})
+    if dropped: print("  BERD ITL2 names not matched (boundary change / suppressed):", "; ".join(sorted(set(dropped))))
+    out["region"] = region
+    # Table 5: broad product groups, % change 2022 -> 2024 in real terms
+    def defl(y):
+        k = f"{y}/{str((y + 1) % 100).zfill(2)}"
+        return (cpi.get(k) if cpi else None) or 100.0
+    grp, rows = None, []
+    for r in rows_of(wb["5"]):
+        if r and r[0] and num(r[1]) is not None and num(r[3]) is not None:
+            g = str(r[0]).strip()
+            if g.startswith(("Total", "Manufacturing: Total", "Other: Total", "R&D")): continue
+            a, b = num(r[1]) / defl(2022), num(r[3]) / defl(2024)
+            if a: rows.append({"g": g.replace("&", "and").rstrip(";").strip(), "pct": (b / a - 1) * 100})
+    for r in rows_of(wb["5"]):                       # keep Services
+        if r and r[0] and str(r[0]).strip() == "Services" and not any(x["g"] == "Services" for x in rows):
+            a, b = num(r[1]) / defl(2022), num(r[3]) / defl(2024); rows.append({"g": "Services", "pct": (b / a - 1) * 100})
+    out["industry"] = {"rows": rows, "base": 2022, "last": 2024, "src": "ONS BERD 2024 official statistics, Table 5, real terms (deflated with the CPM price index)"}
+    # also expose the UK total as three official points (nominal) for reference
+    out["official"] = [{"y": y, "v": next((x["v"] for x in region if x["a"] == "United Kingdom" and x["y"] == y), None)} for y in (2022, 2023, 2024)]
 
 
 # ───────────────── pandas helpers for the PowerPoint reports ─────────────────

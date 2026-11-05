@@ -126,7 +126,7 @@ function renderPlace(){
 function plRender(){
   const E=plEntities(); if(!E.length) return;
   plChips(E); plKpis(E); plMap(E); plProfile(E);
-  plBerd(E); plCpm(E); plBci(E); plTypes(E); plCagrChart(E); plClusters(E); plProducts(E); plEco(E);
+  plHeads(E); plBerd(E); plCpm(E); plBci(E); plTypes(E); plCagrChart(E); plClusters(E); plProducts(E); plEco(E);
   plStories(E);
 }
 function plChips(E){
@@ -149,9 +149,9 @@ function plTrace(e,y,name,extra){
   return Object.assign({x:PY,y:y,name:name||e.name,legendgroup:e.key,mode:'lines+markers',connectgaps:false,
     line:{color:e.col,width:e.w,dash:e.dash},marker:{size:e.key==='place'?7:5,color:e.col}},extra||{});
 }
-function plSub(id,panels,cols,height){
-  const E=plEntities(), rows=Math.ceil(panels.length/cols), tr=[], lay={height:height||(rows*300+80),margin:{l:60,r:20,t:30,b:60},legend:{orientation:'h',y:-0.08},annotations:[]};
-  const gx=0.07, gy=0.16;
+function plSub(id,panels,cols,height,ents){
+  const E=ents||plEntities(), rows=Math.ceil(panels.length/cols), tr=[], lay={height:height||(rows*300+80),margin:{l:60,r:20,t:56,b:60},legend:{orientation:'h',y:-0.08},annotations:[]};
+  const gx=0.07, gy=0.2;
   panels.forEach((p,i)=>{
     const c=i%cols, r=Math.floor(i/cols), sfx=i?String(i+1):'';
     const w=(1-gx*(cols-1))/cols, h=(1-gy*(rows-1))/rows, x0=c*(w+gx), y1=1-r*(h+gy), y0=y1-h;
@@ -185,22 +185,21 @@ function plBerd(E){
   const B=PLP.berd||{}, A=plAreas(PS.level)[PS.place], ser=plBerdSeries(E);
   const noteEl=document.getElementById('plBerdTrendNote');
   // (a) trend
+  const tsrc=document.getElementById('plBerdTrendSrc');
   if(ser){
     const yrs=[...new Set(ser.flatMap(s=>Object.keys(s.m).map(Number)))].sort();
-    noteEl.textContent='£m, real terms · ONS BERD';
-    Plotly.newPlot('chBerdTrend',ser.map(s=>plTrace(s.e,yrs.map(y=>s.m[y]==null?null:s.m[y]),s.name,{x:yrs})),L({height:420,margin:{l:70,r:20,t:10,b:60},yaxis:{title:{text:'£m, real terms',font:{size:12}},gridcolor:'#eeebf1',rangemode:'tozero'}}),CFG);
-  } else if(B.uk){
-    noteEl.textContent='UK total, £bn';
-    Plotly.newPlot('chBerdTrend',[{x:B.uk.years,y:B.uk.values,type:'scatter',mode:'lines+markers',name:'UK business R&D',line:{color:C.pd,width:3},marker:{size:7},hovertemplate:'%{x}: <b>£%{y:.1f}bn</b><extra></extra>'}],
-      L({height:420,margin:{l:70,r:20,t:10,b:60},yaxis:{title:{text:'£bn',font:{size:12}},gridcolor:'#eeebf1',rangemode:'tozero'},
-         annotations:[{xref:'paper',yref:'paper',x:0.5,y:1.0,text:'UK total only. Regional series need input/berd_region.csv',showarrow:false,font:{size:11,color:C.pm}}]}),CFG);
-  } else { document.getElementById('chBerdTrend').innerHTML='<div class="data-needed">No business R&amp;D data loaded.</div>'; }
+    noteEl.textContent='£m, real terms';
+    Plotly.newPlot('chBerdTrend',ser.map(s=>plTrace(s.e,yrs.map(y=>s.m[y]==null?null:s.m[y]),s.name,{x:yrs,hovertemplate:'%{x}: <b>£%{y:,.0f}m</b><extra>'+s.name+'</extra>'})),L({height:420,margin:{l:70,r:20,t:10,b:90},legend:{orientation:'h',y:-0.2},xaxis:{dtick:1,tickformat:'d'},yaxis:{title:{text:'£m, real 2024/25 prices',font:{size:12}},gridcolor:'#eeebf1',rangemode:'tozero'}}),CFG);
+    tsrc.textContent='ONS BERD 2024 (published Nov 2025), expenditure on R&D performed in UK businesses by ITL region, 2022 to 2024, converted to real terms with the CPM price index. Places without their own figure show their region.';
+  } else { document.getElementById('chBerdTrend').innerHTML='<div class="data-needed">No regional business R&amp;D data for this place. Check input/berd2024official.xlsx.</div>'; tsrc.textContent=''; }
+  if(B.uk) Plotly.newPlot('chBerdUK',[{x:B.uk.years,y:B.uk.values,type:'scatter',mode:'lines+markers',name:'UK business R&D',line:{color:C.pd,width:3},marker:{size:7},hovertemplate:'%{x}: <b>£%{y:.1f}bn</b><extra></extra>'}],
+      L({height:420,margin:{l:70,r:20,t:10,b:60},yaxis:{title:{text:'£bn',font:{size:12}},gridcolor:'#eeebf1',rangemode:'tozero'}}),CFG);
   // (b) industry
   const I=B.industry, ie=document.getElementById('chBerdInd');
   if(I&&I.rows.length){
     const rows=I.rows.slice().sort((a,b)=>b.pct-a.pct), col=v=>v>=0?C.green:v>-10?'#e8a600':C.pink;
-    Plotly.newPlot(ie,[{type:'bar',orientation:'h',y:rows.map(r=>r.g),x:rows.map(r=>r.pct),marker:{color:rows.map(r=>col(r.pct))},text:rows.map(r=>(r.pct>0?'+':'')+r.pct.toFixed(1)+'%'),textposition:'outside',cliponaxis:false,hovertemplate:'%{y}: <b>%{x:+.1f}%</b><extra></extra>'}],
-      L({height:Math.max(420,rows.length*28+70),margin:{l:170,r:60,t:10,b:40},yaxis:{autorange:'reversed',automargin:true},xaxis:{ticksuffix:'%',gridcolor:'#eeebf1',zeroline:true,range:[Math.min(-10,Math.min(...rows.map(r=>r.pct))-10),Math.max(10,Math.max(...rows.map(r=>r.pct))+8)]}}),CFG);
+    Plotly.newPlot(ie,[{type:'bar',orientation:'h',y:rows.map(r=>r.g.split(';')[0]),x:rows.map(r=>r.pct),marker:{color:rows.map(r=>col(r.pct))},text:rows.map(r=>(r.pct>0?'+':'')+r.pct.toFixed(1)+'%'),textposition:'outside',cliponaxis:false,hovertemplate:'%{y}: <b>%{x:+.1f}%</b><extra></extra>'}],
+      L({height:Math.max(420,rows.length*28+70),margin:{l:200,r:60,t:10,b:40},yaxis:{autorange:'reversed',automargin:true},xaxis:{ticksuffix:'%',gridcolor:'#eeebf1',zeroline:true,range:[Math.min(-10,Math.min(...rows.map(r=>r.pct))-10),Math.max(10,Math.max(...rows.map(r=>r.pct))+8)]}}),CFG);
     document.getElementById('plBerdIndSrc').textContent='Percent change in UK business R&D expenditure, '+I.base+' to '+I.last+', by broad group. Source: '+I.src+'.';
   } else ie.innerHTML='<div class="data-needed">No industry data loaded (input/berd_industry.csv).</div>';
   // (c) growth comparison
@@ -213,7 +212,7 @@ function plBerd(E){
     const rows=ser.map(s=>({s,g:(s.m[base]&&s.m[last])?(s.m[last]/s.m[base]-1)*100:null})).filter(r=>r.g!=null);
     Plotly.newPlot(ge,[{type:'bar',x:rows.map(r=>r.s.name),y:rows.map(r=>r.g),marker:{color:rows.map(r=>r.s.e.col)},text:rows.map(r=>plPct(r.g,1)),textposition:'outside',cliponaxis:false,hovertemplate:'%{x}: <b>%{y:+.1f}%</b><extra></extra>'}],
       L({height:420,margin:{l:60,r:20,t:20,b:90},yaxis:{ticksuffix:'%',gridcolor:'#eeebf1',zeroline:true},xaxis:{tickangle:-20,automargin:true}}),CFG);
-    gs.textContent='Change in business R&D expenditure, '+base+' to '+last+', real terms. Source: ONS BERD (input/berd_region.csv).';
+    gs.textContent='Change in business R&D expenditure, '+base+' to '+last+', real terms. Source: ONS BERD 2024 (published Nov 2025).';
   } else if(B.intl){
     bw.style.display='none';
     const rows=B.intl.rows.slice().sort((a,b)=>a.pct-b.pct);
@@ -255,9 +254,9 @@ function plBci(E){
 
 /* ---------- 3. type of collaboration x business size ---------- */
 function plTypes(E){
-  const u=plUnit(), P=E[0], B=E.slice(1), tr=[], lay={height:760,margin:{l:60,r:20,t:30,b:60},legend:{orientation:'h',y:-0.07},annotations:[]};
+  const u=plUnit(), P=E[0], B=E.slice(1), tr=[], lay={height:800,margin:{l:60,r:20,t:60,b:60},legend:{orientation:'h',y:-0.07},annotations:[]};
   const panels=[['Contract research','cr_sme','cr_lc'],['Consultancy','cons_sme','cons_lc'],['Facilities & equipment','fac_sme','fac_lc'],['IP licensing','lic_sme','lic_lc']];
-  const gx=0.07,gy=0.16,w=(1-gx)/2,h=(1-gy)/2;
+  const gx=0.07,gy=0.2,w=(1-gx)/2,h=(1-gy)/2;
   panels.forEach((p,i)=>{
     const c=i%2,r=Math.floor(i/2),sfx=i?String(i+1):'',x0=c*(w+gx),y1=1-r*(h+gy),y0=y1-h;
     lay['xaxis'+sfx]={domain:[x0,x0+w],anchor:'y'+sfx,gridcolor:'#eeebf1',tickangle:-45,tickfont:{size:10}};
@@ -322,11 +321,11 @@ function plClusters(E){
 /* ---------- 6. IP income, patents, spin-outs ---------- */
 function plProducts(E){
   const P=E[0], u=plUnit();
-  const lay={height:520,margin:{l:60,r:20,t:30,b:70},legend:{orientation:'h',y:-0.14},barmode:'stack',annotations:[],
+  const lay={height:520,margin:{l:60,r:20,t:56,b:70},legend:{orientation:'h',y:-0.14},barmode:'stack',annotations:[],
     xaxis:{domain:[0,0.56],anchor:'y',tickangle:-45,tickfont:{size:10}},yaxis:{domain:[0,1],anchor:'x',gridcolor:'#eeebf1',tickformat:',.2f'},
     xaxis2:{domain:[0.64,1],anchor:'y2',tickangle:-45,tickfont:{size:10}},yaxis2:{domain:[0,1],anchor:'x2',gridcolor:'#eeebf1',rangemode:'tozero'}};
-  lay.annotations.push({xref:'paper',yref:'paper',x:0,y:1.03,text:'<b>IP licensing income (£m '+u+', '+P.name+')</b>',showarrow:false,xanchor:'left',yanchor:'bottom',font:{size:12.5,color:C.pd}});
-  lay.annotations.push({xref:'paper',yref:'paper',x:0.64,y:1.03,text:'<b>Licences granted ('+u+')</b>',showarrow:false,xanchor:'left',yanchor:'bottom',font:{size:12.5,color:C.pd}});
+  lay.annotations.push({xref:'paper',yref:'paper',x:0,y:1.03,text:'<b>Licensing income (£m '+u+')</b>',showarrow:false,xanchor:'left',yanchor:'bottom',font:{size:12.5,color:C.pd}});
+  lay.annotations.push({xref:'paper',yref:'paper',x:0.64,y:1.03,text:'<b>Licences granted</b>',showarrow:false,xanchor:'left',yanchor:'bottom',font:{size:12.5,color:C.pd}});
   const lc=PY.map((_,y)=>plM('lic_lc')(P,y)), sm=PY.map((_,y)=>plM('lic_sme')(P,y)), tot=PY.map((_,y)=>lc[y]==null&&sm[y]==null?null:(lc[y]||0)+(sm[y]||0));
   const okT=tot.filter(v=>v!=null), avg=okT.length?okT.reduce((a,b)=>a+b,0)/okT.length:0;
   const tr=[{type:'bar',x:PY,y:lc,name:'Large businesses',marker:{color:C.pd},hovertemplate:'%{x}: £%{y:.2f}m<extra>Large businesses</extra>'},
@@ -345,8 +344,9 @@ function plStories(E){
   const set=(id,paras,cards)=>{document.getElementById(id).innerHTML=paras.filter(Boolean).map(t=>`<p>${t}</p>`).join('')+(cards&&cards.length?`<div class="insights">${cards.map(c=>`<div class="insight"><b class="h">${c[0]}</b>${c[1]}</div>`).join('')}</div>`:'');};
   // chapter 1
   const p1=[];
-  if(BD.uk){const v=BD.uk.values, yr=BD.uk.years, last=v[v.length-1], k=Math.max(0,v.length-6); const mx=Math.max(...v), my=yr[v.indexOf(mx)];
-    p1.push(`Universities collaborate with businesses that invest in R&amp;D, so the backdrop matters. UK business R&amp;D stood at <b>£${last.toFixed(1)}bn in ${yr[yr.length-1]}</b>, ${Math.abs((last/v[k]-1)*100)<0.5?'level with':Math.abs((last/v[k]-1)*100).toFixed(0)+'% '+(last>=v[k]?'above':'below')} its ${yr[k]} level, and ${last<mx?`<b>${((1-last/mx)*100).toFixed(0)}% below its ${my} peak of £${mx.toFixed(1)}bn</b>`:'at its peak'}.`);}
+  {const ukS=plBerdSeries(E.filter(e=>e.key==='uk')); const m=ukS&&ukS[0]&&ukS[0].m; if(m){const ys=Object.keys(m).map(Number).sort(), l=ys[ys.length-1], f=ys[0];
+    p1.push(`Universities collaborate with businesses that invest in R&amp;D, so the backdrop matters. UK business R&amp;D was <b>£${(BD.official?BD.official[2].v/1000:m[l]/1000).toFixed(1)}bn in ${l}</b> (current prices), ${Math.abs((m[l]/m[f]-1)*100)<0.5?'unchanged':`<b>${Math.abs((m[l]/m[f]-1)*100).toFixed(1)}% ${m[l]>=m[f]?'higher':'lower'}</b>`} than in ${f} in real terms.`);}
+   else if(BD.uk){const v=BD.uk.values, yr=BD.uk.years; p1.push(`Universities collaborate with businesses that invest in R&amp;D, so the backdrop matters. UK business R&amp;D stood at £${v[v.length-1].toFixed(1)}bn in ${yr[yr.length-1]}.`);}}
   if(BD.industry&&BD.industry.rows.length){const r=BD.industry.rows.slice().sort((a,b)=>b.pct-a.pct), up=r.filter(x=>x.pct>0).length;
     p1.push(`Under the headline the picture is uneven: between ${BD.industry.base} and ${BD.industry.last}, <b>${up} of ${r.length}</b> broad industry groups increased business R&amp;D, led by ${r[0].g.toLowerCase()} (${plPct(r[0].pct,1)}), while ${r[r.length-1].g.toLowerCase()} fell furthest (${plPct(r[r.length-1].pct,1)}).`);}
   if(BD.intl){const uk=BD.intl.rows.find(x=>x.c==='United Kingdom'); if(uk){const lower=BD.intl.rows.filter(x=>x.pct<uk.pct).length; p1.push(`Internationally the UK is an outlier: business R&amp;D growth since ${BD.intl.base} was ${plPct(uk.pct,1)}, ${lower===0?'the weakest of the economies shown':'below most economies shown'}.`);}}
@@ -513,8 +513,33 @@ function plPptxBuild(){
   const note=(sl,t)=>sl.addText(t,{x:0.5,y:1.7,w:12.3,h:5,fontFace:FONT_,fontSize:14,color:PUR,valign:'top',fit:'shrink'});
   const rs=(arr,f)=>arr.map(f);
   // 1 the story at a glance (all chapters)
-  let sl=body('Summary',P.name+': the story in brief','From business R&D to collaboration outcomes',null);
-  sl.addText([1,2,3,4,5,6].flatMap(i=>{const t=storyText('plStory'+i).split('\n\n')[0]||''; return t?[{text:t,options:{breakLine:true,paraSpaceAfter:8,bullet:true}}]:[];}),{x:0.55,y:1.7,w:12.2,h:5.1,fontFace:FONT_,fontSize:13,color:PUR,valign:'top',fit:'shrink'});
+  let sl=body('Summary',P.name+': the story in brief','The place at a glance, then comparisons',null);
+  sl.addText(['plHead1','plHead2','plHead3','plStory1','plStory2','plStory3','plStory4','plStory5','plStory6'].flatMap(i=>{const t=storyText(i).split('\n\n')[0]||''; return t?[{text:t,options:{breakLine:true,paraSpaceAfter:8,bullet:true}}]:[];}),{x:0.55,y:1.7,w:12.2,h:5.1,fontFace:FONT_,fontSize:13,color:PUR,valign:'top',fit:'shrink'});
+  // Part 1: the place at a glance
+  {const bci=plSeries(P,'bci'), idx=plIdx(bci), hd=document.getElementById('plHead1').innerText.split('\n').filter(Boolean);
+   const g5=plCagr(bci,y,5);
+   sl=body('Part 1 · Collaboration income',P.name+': business collaboration income',hd[0]?hd[0].slice(0,150):'',[g5==null?'n/a':plFmt(g5,'pcts'),'5-year CAGR','Real 2024/25 prices, '+u+'.']);
+   const bs=E.slice(1).map(b=>({n:b.name+' BCI',c:b.col,v:plIdx(plSeries(b,'bci')).map(v=>v==null?null:+v.toFixed(1))}));
+   line(sl,[{n:P.name+' BCI (index)',c:PNK,v:idx.map(v=>v==null?null:+v.toFixed(1))}].concat(bs),'0');
+   const yoy=bci.map((v,i)=>i&&bci[i-1]>0&&v!=null?+((v/bci[i-1]-1)*100).toFixed(1):0);
+   sl=body('Part 1 · Collaboration income','Annual growth of collaboration income','% change on the previous year, '+u,null);
+   sl.addChart(pp.charts.BAR,[{name:'YoY %',labels:PY,values:yoy}],Object.assign({},chartBox,{w:12.2},gridOpt,{barDir:'col',chartColors:yoy.map(v=>v>=0?'00B388':'FF0090'),showLegend:false,showValue:true,dataLabelFontSize:9,dataLabelFormatCode:'0"%"',valAxisLabelFormatCode:'0"%"'}));
+   const i0=P.s.bci.findIndex(v=>v>0), T0=P.s.bci[i0], T1=P.s.bci[y];
+   const cs=[['Total BCI change',null],['Consultancy','cons'],['Facilities & equipment','fac'],['Contract research','cr'],['Licensing / IP','ip'],['SME','sme'],['Large business','lc']];
+   const dv=cs.map(r=>r[1]?+(((P.s[r[1]][y]||0)-(P.s[r[1]][i0]||0))/T0*100).toFixed(1):+((T1/T0-1)*100).toFixed(1));
+   sl=body('Part 1 · Collaboration income','What drove the change in income?','Contribution to change in BCI, percentage points, '+PY[i0]+' to '+PY[y],null);
+   sl.addChart(pp.charts.BAR,[{name:'pp',labels:cs.map(r=>r[0]),values:dv}],Object.assign({},chartBox,{w:12.2},gridOpt,{barDir:'bar',catAxisOrientation:'maxMin',chartColors:['3E1151','0085CA','00B388','FF0090','6D5F8F','8C7BB0','1A0524'],showLegend:false,showValue:true,dataLabelFontSize:10,dataLabelFormatCode:'0.0',valAxisLabelFormatCode:'0"pp"'}));
+   sl=body('Part 1 · Commercialisation','Industry funding to universities','£m, real 2024/25 prices, '+u,null);
+   sl.addChart(pp.charts.BAR,[['ukind','UK industry'],['ind_eu','EU industry'],['ind_non','Non-EU industry']].map(k=>({name:k[1],labels:PY,values:PY.map((_,i)=>{const v=plAmt(P,k[0],i);return v==null?0:+(v/1000).toFixed(2);})})),Object.assign({},chartBox,{w:12.2},gridOpt,{barDir:'col',barGrouping:'stacked',chartColors:['3E1151','0085CA','FF0090']}));
+   sl=body('Part 1 · Spin-outs','New and surviving spin-outs',u,[plFmt(P.s.spin[y],'n'),'surviving spin-outs, '+PY[y],plFmt(P.s.sp_new[y],'n')+' newly registered in the year.']);
+   line(sl,[{n:'Active after 3 years',c:PNK,v:PY.map((_,i)=>{const v=plAmt(P,'spin',i);return v==null?null:+v.toFixed(2);})},{n:'Newly registered',c:'0085CA',v:PY.map((_,i)=>{const v=plAmt(P,'sp_new',i);return v==null?null:+v.toFixed(2);})}],'0.0');
+   sl=body('Part 1 · Spin-outs','Spin-outs, staff and student start-ups','Firms active after 3+ years, '+u,null);
+   sl.addChart(pp.charts.BAR,[['spin','Spin-outs'],['staff_su','Staff start-ups'],['stud_su','Student start-ups']].map(k=>({name:k[1],labels:PY,values:PY.map((_,i)=>{const v=plAmt(P,k[0],i);return v==null?0:+v.toFixed(1);})})),Object.assign({},chartBox,{w:12.2},gridOpt,{barDir:'col',barGrouping:'stacked',chartColors:['3E1151','FF0090','0085CA']}));
+   sl=body('Part 1 · Spin-outs','Employment in spin-outs and start-ups','Estimated FTE of active firms, '+u,[Math.round(P.s.sp_fte[y]||0).toLocaleString('en-GB'),'FTE in spin-outs, '+PY[y],P.s.spin[y]>0?(P.s.sp_fte[y]/P.s.spin[y]).toFixed(1)+' FTE per surviving spin-out.':'']);
+   sl.addChart(pp.charts.BAR,[['sp_fte','Spin-outs'],['staff_fte','Staff start-ups'],['stud_fte','Student start-ups']].map(k=>({name:k[1],labels:PY,values:PY.map((_,i)=>{const v=plAmt(P,k[0],i);return v==null?0:+v.toFixed(0);})})),Object.assign({},chartBox,gridOpt,{barDir:'col',barGrouping:'stacked',chartColors:['3E1151','FF0090','0085CA']}));
+   sl=body('Part 1 · Spin-outs','Spin-outs and external investment','£m real (bars) and spin-outs surviving 3+ years',null);
+   sl.addChart(pp.charts.BAR,[{name:'External investment (£m)',labels:PY,values:PY.map((_,i)=>{const v=plAmt(P,'ext',i);return v==null?0:+(v/1000).toFixed(1);})}],Object.assign({},chartBox,{w:12.2},gridOpt,{barDir:'col',chartColors:['3E1151'],showLegend:false,showValue:true,dataLabelFontSize:9,dataLabelFormatCode:'0.0'}));
+  }
   // 2 BERD context
   const Bd=PLP.berd||{}, ser=plBerdSeries(E);
   sl=body('1 · Context','Business R&D: the backdrop to collaboration',ser?'Business R&D, £m, real terms (ONS BERD)':'UK business expenditure on R&D, £bn (ONS BERD)',[Bd.uk?'£'+Bd.uk.values[Bd.uk.values.length-1].toFixed(1)+'bn':'–','UK business R&D, '+(Bd.uk?Bd.uk.years[Bd.uk.years.length-1]:''),storyText('plStory1').split('\n\n')[0]||'']);
@@ -593,4 +618,112 @@ function plPptxBuild(){
     {text:'Benchmarks. ',options:{bold:true,color:PNK}},{text:'England = providers in English regions. UK = all providers in the HE-BCI panel.'}],
     {x:0.55,y:1.7,w:12,h:4.5,fontFace:FONT_,fontSize:14,color:PUR,valign:'top'});
   pp.writeFile({fileName:'NCUB_place_report_'+P.name.replace(/[^A-Za-z0-9]+/g,'_')+'.pptx'});
+}
+
+/* ======================= PART 1: THE PLACE AT A GLANCE (place only) ======================= */
+const plYrNum=i=>+String(PY[i]).slice(0,4);
+const plSeries=(e,k)=>PY.map((_,y)=>plAmt(e,k,y));
+const plIdx=a=>{const i0=a.findIndex(v=>v!=null&&v>0); return a.map(v=>v==null||i0<0?null:v/a[i0]*100);};
+function plMacroFor(P,kind){
+  const M=PLP.berd&&PLP.berd.macro; if(!M||!M.length) return null;
+  const A=plAreas(PS.level)[PS.place], norm=x=>String(x).toLowerCase().replace(/[^a-z0-9]/g,'');
+  let rows=M.filter(r=>norm(r.area)===norm(P.name)); let src=P.name;
+  if(!rows.length&&A&&A.r){rows=M.filter(r=>norm(r.area)===norm(A.r)); src=A.r+' (region)';}
+  if(!rows.length) return null;
+  const by={}; rows.forEach(r=>{if(r[kind]!=null) by[+r.year]=+r[kind];});
+  const a=PY.map((_,y)=>by[plYrNum(y)]==null?null:by[plYrNum(y)]);
+  return a.some(v=>v!=null)?{a,src}:null;
+}
+function plHeads(E){
+  const P=E[0], u=plUnit(), y=LY;
+  plHeadBci(P,u,y); plHeadCom(P,u,y); plHeadSpin(P,u,y);
+}
+const plTraceP=(x,yv,name,col,extra)=>Object.assign({x,y:yv,name,mode:'lines+markers',connectgaps:false,line:{color:col,width:3},marker:{size:6,color:col}},extra||{});
+function plHeadBci(P,u,y){
+  const bci=plSeries(P,'bci'), g1=bci[y-1]>0?(bci[y]/bci[y-1]-1)*100:null, g5=plCagr(bci,y,5), v19=bci[4]>0?(bci[y]/bci[4]-1)*100:null;
+  const smeS=plRat(P,'sme','bci',100,y), smeS0=plRat(P,'sme','bci',100,0);
+  const K=[['£'+(bci[y]/1000).toFixed(bci[y]>=10000?1:2)+'m','BCI '+u+', '+PY[y],'g'],[plPct(g1,1),'on the previous year',g1>=0?'g':'p'],[plPct(g5,1),'a year over five years (CAGR)',g5>=0?'g':'p'],[plPct(v19,0),'vs 2018/19, pre-Covid',v19>=0?'g':'p'],[plFmt(smeS,'pct'),'from SMEs'+(smeS0!=null?' (was '+plFmt(smeS0,'pct')+' in '+PY[0]+')':''),'b']];
+  document.getElementById('plHeadKpis').innerHTML=K.map(k=>`<div class="kpi ${k[2]}" style="padding:10px 12px"><div class="v" style="font-size:22px">${k[0]}</div><div class="l">${k[1]}</div></div>`).join('');
+  const peak=Math.max(...bci.filter(v=>v!=null)), py=PY[bci.indexOf(peak)];
+  const st=[['cr','contract research'],['cons','consultancy'],['fac','facilities & equipment'],['ip','IP income']];
+  const tot=st.reduce((s,k)=>s+(P.s[k[0]][y]||0),0), lead=st.map(k=>[k[1],(P.s[k[0]][y]||0)/(tot||1)*100]).sort((a,b)=>b[1]-a[1])[0];
+  const par=[`<b>How is collaboration income in ${P.name} doing?</b> BCI ${u} was <b>${plFmt(bci[y],'gbp')}</b> in ${PY[y]}, ${g1==null?'':plPct(g1,1)+' on the year'}, ${g5==null?'':`${g5>=0?'growing':'falling'} by ${Math.abs(g5).toFixed(1)}% a year over five years`}${v19==null?'':` and ${Math.abs(v19).toFixed(0)}% ${v19>=0?'above':'below'} its 2018/19 level`}. ${bci[y]<peak?`Its peak was ${plFmt(peak,'gbp')} in ${py}.`:'This is its highest level in the series.'}`,
+    `${lead[0][0].toUpperCase()+lead[0].slice(1)} is the largest stream (${lead[1].toFixed(0)}% of income), and SMEs supply ${plFmt(smeS,'pct')}.`];
+  document.getElementById('plHead1').innerHTML=par.map(t=>`<p>${t}</p>`).join('');
+  // indexed vs GDP / IPP
+  const gdp=plMacroFor(P,'gdp_real'), ipp=plMacroFor(P,'ipp_real'), tr=[plTraceP(PY,plIdx(bci),'BCI (real terms)',C.pd,{line:{color:C.pd,width:4},fill:'tozeroy',fillcolor:'rgba(62,17,81,0.07)',marker:{size:8,color:'#fff',line:{color:C.pd,width:2}}})];
+  const src=document.getElementById('plMacroSrc');
+  if(gdp) tr.push(plTraceP(PY,plIdx(gdp.a),'GDP (real terms) · '+gdp.src,C.blue,{line:{color:C.blue,width:2.5,dash:'dot'}}));
+  if(ipp) tr.push(plTraceP(PY,plIdx(ipp.a),'Intellectual property investment (incl. R&D) · '+ipp.src,C.pink,{line:{color:C.pink,width:2.5,dash:'dot'}}));
+  if(!gdp&&!ipp){
+    [['uk','UK BCI',C.blue],['eng','England BCI','#3a6ea5']].forEach(([k,n,c])=>{const b=plEntities().find(e=>e.key===k); if(b) tr.push(plTraceP(PY,plIdx(plSeries(b,'bci')),n,c,{line:{color:c,width:2,dash:'dot'},marker:{size:4,color:c}}));});
+    src.innerHTML='Indexed to the first year with data. <b>Regional GDP and IP investment are not loaded:</b> add <code>input/regional_macro.csv</code> (template in <code>input/</code>) with real-terms GDP and IP investment by region to compare against them. Until then, UK and England BCI are shown as reference lines.';
+  } else src.textContent='BCI, regional GDP and IP investment all in real terms, each indexed to the first year with data. Source: HE-BCI via NCUB master panel; regional series from input/regional_macro.csv.';
+  const last=(a)=>{for(let i=a.length-1;i>=0;i--) if(a[i]!=null) return [i,a[i]]; return null;};
+  const ann=tr.map(t=>{const l=last(t.y); return l?{x:PY[l[0]],y:l[1],text:'<b>'+Math.round(l[1])+'</b>',showarrow:false,xanchor:'left',xshift:8,font:{size:13,color:t.line.color}}:null;}).filter(Boolean);
+  Plotly.newPlot('chBciMacro',tr,L({height:430,margin:{l:55,r:60,t:20,b:80},legend:{orientation:'h',y:-0.18},yaxis:{gridcolor:'#eeebf1'},annotations:ann,shapes:[{type:'line',xref:'paper',x0:0,x1:1,y0:100,y1:100,line:{color:'#9a90a6',width:1}}]}),CFG);
+  // decomposition: whole period and latest year
+  const st2=[['Total BCI change',null,C.pd],['Consultancy','cons',C.blue],['Facilities & equipment','fac',C.green],['Contract research','cr',C.pink],['Licensing / IP','ip','#6d5f8f'],['SME','sme','#8c7bb0'],['Large business','lc','#1a0524']];
+  const i0=P.s.bci.findIndex(v=>v>0);
+  const dec=(a,b)=>{const T0=P.s.bci[a],T1=P.s.bci[b]; return st2.map(r=>{ if(!r[1]) return T0>0?(T1/T0-1)*100:null; const v0=P.s[r[1]][a]||0,v1=P.s[r[1]][b]||0; return T0>0?(v1-v0)/T0*100:null;});};
+  const dA=dec(i0,y), dB=dec(y-1,y), labs=st2.map(r=>r[0]), rl=labs.slice().reverse();
+  const bar=(vals,xa,ya,ttl)=>({type:'bar',orientation:'h',x:vals.slice().reverse().map(v=>v==null?0:+v.toFixed(1)),y:rl,xaxis:xa,yaxis:ya,marker:{color:st2.map(r=>r[2]).reverse()},text:vals.slice().reverse().map(v=>v==null?'':(v>0?'+':'')+v.toFixed(1)+'pp'),textposition:'outside',cliponaxis:false,hovertemplate:'%{y}: <b>%{x:+.1f}pp</b><extra>'+ttl+'</extra>',showlegend:false});
+  const rng=v=>{const m=Math.max(5,...v.map(x=>Math.abs(x||0)))*1.7; return [-m,m];};
+  Plotly.newPlot('chBciDecomp',[bar(dA,'x','y',PY[i0]+' to '+PY[y]),bar(dB,'x2','y2',PY[y-1]+' to '+PY[y])],L({height:430,margin:{l:170,r:30,t:56,b:40},
+    xaxis:{domain:[0,0.46],range:rng(dA),zeroline:true,zerolinewidth:2,ticksuffix:'pp',gridcolor:'#eeebf1',anchor:'y'},yaxis:{automargin:true,anchor:'x',tickfont:{size:12}},
+    xaxis2:{domain:[0.56,1],range:rng(dB),zeroline:true,zerolinewidth:2,ticksuffix:'pp',gridcolor:'#eeebf1',anchor:'y2'},yaxis2:{showticklabels:false,anchor:'x2',matches:'y'},
+    annotations:[{xref:'paper',yref:'paper',x:0.23,y:1.1,text:'<b>'+PY[i0]+' – '+PY[y]+'</b>',showarrow:false,font:{size:13}},{xref:'paper',yref:'paper',x:0.78,y:1.1,text:'<b>'+PY[y-1]+' – '+PY[y]+'</b>',showarrow:false,font:{size:13}}],
+    shapes:[{type:'line',xref:'paper',yref:'paper',x0:-0.4,x1:1,y0:1-1/7,y1:1-1/7,line:{color:'#d0c8da',dash:'dot',width:1}}]}),CFG);
+  // annual growth
+  const yoy=bci.map((v,i)=>i&&bci[i-1]>0&&v!=null?(v/bci[i-1]-1)*100:null);
+  Plotly.newPlot('chBciYoy',[{type:'bar',x:PY,y:yoy,marker:{color:yoy.map(v=>v==null?'#ccc':v>=0?C.green:C.pink)},text:yoy.map(v=>v==null?'':(v>0?'+':'')+v.toFixed(0)+'%'),textposition:'outside',cliponaxis:false,hovertemplate:'%{x}: <b>%{y:+.1f}%</b><extra></extra>'}],
+    L({height:380,margin:{l:55,r:20,t:30,b:70},yaxis:{ticksuffix:'%',gridcolor:'#eeebf1',zeroline:true,zerolinewidth:2},xaxis:{tickangle:-45}}),CFG);
+  document.getElementById('plYoySrc').textContent='Change in BCI '+u+' on the previous year, real prices. Green = growth, pink = fall.'+(g5!=null?' Five-year CAGR: '+plPct(g5,1)+' a year.':'');
+  // stream stack + SME / large
+  document.getElementById('plStackNote').textContent='£m, '+u;
+  const mk=(k,n,c,xa,ya,sg)=>({type:'scatter',mode:'lines',stackgroup:sg,x:PY,y:PY.map((_,i)=>{const v=plAmt(P,k,i);return v==null?null:v/1000;}),name:n,xaxis:xa,yaxis:ya,line:{width:.5,color:c},fillcolor:c+'cc',hovertemplate:'%{x}: <b>£%{y:.2f}m</b><extra>'+n+'</extra>'});
+  Plotly.newPlot('chBciStack',[mk('cr','Contract research',C.pink,'x','y','a'),mk('cons','Consultancy',C.blue,'x','y','a'),mk('fac','Facilities & equipment',C.green,'x','y','a'),mk('ip','IP income','#6d5f8f','x','y','a'),
+    mk('lc','Large business',C.pd,'x2','y2','b'),mk('sme','SMEs',C.pink,'x2','y2','b')],
+    L({height:420,margin:{l:60,r:20,t:56,b:90},legend:{orientation:'h',y:-0.22},
+      xaxis:{domain:[0,0.47],anchor:'y',tickangle:-45,tickfont:{size:10}},yaxis:{domain:[0,1],anchor:'x',gridcolor:'#eeebf1',rangemode:'tozero'},
+      xaxis2:{domain:[0.55,1],anchor:'y2',tickangle:-45,tickfont:{size:10}},yaxis2:{domain:[0,1],anchor:'x2',gridcolor:'#eeebf1',rangemode:'tozero'},
+      annotations:[{xref:'paper',yref:'paper',x:0,y:1.04,text:'<b>By stream</b>',showarrow:false,xanchor:'left',yanchor:'bottom',font:{size:13,color:C.pd}},{xref:'paper',yref:'paper',x:0.55,y:1.04,text:'<b>By size of business</b>',showarrow:false,xanchor:'left',yanchor:'bottom',font:{size:13,color:C.pd}}]}),CFG);
+}
+function plHeadCom(P,u,y){
+  // licensing + patents place-only; industry funding
+  const m=k=>PY.map((_,i)=>{const v=plAmt(P,k,i);return v==null?null:v;});
+  Plotly.newPlot('chPatA',[['patf','Filed',C.pd],['patg','Granted',C.pink],['pate','External parties with a university co-applicant',C.blue]].map(([k,n,c])=>plTraceP(PY,m(k),n,c,{hovertemplate:'%{x}: <b>%{y:.1f}</b><extra>'+n+'</extra>'})),
+    L({height:520,margin:{l:60,r:20,t:30,b:100},legend:{orientation:'h',y:-0.2},yaxis:{title:{text:'Patents, '+u,font:{size:12}},gridcolor:'#eeebf1',rangemode:'tozero'},xaxis:{tickangle:-45}}),CFG);
+  const fund=[['ukind','UK industry',C.pd],['ind_eu','EU industry',C.blue],['ind_non','Non-EU industry',C.pink]];
+  const fdi=(PLP.berd&&PLP.berd.fdi)||null, tr=fund.map(f=>({type:'bar',x:PY,y:PY.map((_,i)=>{const v=plAmt(P,f[0],i);return v==null?null:v/1000;}),name:f[1],marker:{color:f[2]},hovertemplate:'%{x}: <b>£%{y:.2f}m</b><extra>'+f[1]+'</extra>'}));
+  const lay={barmode:'stack',height:430,margin:{l:60,r:70,t:20,b:90},legend:{orientation:'h',y:-0.22},xaxis:{tickangle:-45},yaxis:{title:{text:'£m, real, '+u,font:{size:12}},gridcolor:'#eeebf1',rangemode:'tozero'}};
+  const fs=document.getElementById('plFundSrc');
+  if(fdi&&fdi.length){
+    const orig=[...new Set(fdi.map(r=>r.origin))];
+    orig.forEach((o,i)=>{const by={}; fdi.filter(r=>r.origin===o&&(!r.area||/united kingdom|uk/i.test(r.area)||r.area===P.name)).forEach(r=>by[+r.year]=(by[+r.year]||0)+(+r.projects));
+      tr.push({type:'scatter',mode:'lines+markers',yaxis:'y2',x:PY,y:PY.map((_,k)=>by[plYrNum(k)]==null?null:by[plYrNum(k)]),name:'FDI projects · '+o,line:{color:i?'#e8a600':'#111',width:3,dash:'dot'},marker:{size:6}});});
+    lay.yaxis2={overlaying:'y',side:'right',title:{text:'FDI projects',font:{size:12}},showgrid:false,rangemode:'tozero'};
+    fs.textContent='Funds from industry received by universities (UK, EU, non-EU) with inward investment projects (input/fdi_projects.csv).';
+  } else fs.innerHTML='HE-BCI funds from industry for research (HESA Table 1, real 2024/25 prices). <b>Inward investment projects are not loaded:</b> add <code>input/fdi_projects.csv</code> (year, origin, projects; template in <code>input/</code>) to overlay FDI projects by EU / non-EU origin.';
+  Plotly.newPlot('chIndFund',tr,L(lay),CFG);
+  document.getElementById('plHead2').innerHTML=(()=>{
+    const lic=plM('lic')(P,y), lic0=plM('lic')(P,4), pg=plAmt(P,'patg',y), pf=plAmt(P,'patf',y), ind=PY.map((_,i)=>(plAmt(P,'ukind',i)||0)+(plAmt(P,'ind_eu',i)||0)+(plAmt(P,'ind_non',i)||0));
+    const p=[`<b>What does collaboration turn into in ${P.name}?</b> ${lic!=null?`IP licensing income was <b>£${lic.toFixed(2)}m</b> ${u} in ${PY[y]}${lic0>0?`, ${Math.abs((lic/lic0-1)*100).toFixed(0)}% ${lic>=lic0?'above':'below'} 2018/19`:''}. `:''}${pf!=null?`Universities filed ${pf.toFixed(1)} patents and were granted ${pg==null?'–':pg.toFixed(1)} ${u}.`:''}`];
+    if(ind[y]>0&&ind[4]>0) p.push(`Funds from industry for university R&amp;D came to <b>£${(ind[y]/1000).toFixed(2)}m</b> ${u}, ${Math.abs((ind[y]/ind[4]-1)*100).toFixed(0)}% ${ind[y]>=ind[4]?'above':'below'} 2018/19.`);
+    return p.map(t=>`<p>${t}</p>`).join('');})();
+}
+function plHeadSpin(P,u,y){
+  const m=(k,f)=>PY.map((_,i)=>{const v=plAmt(P,k,i);return v==null?null:(f?f(v):v);});
+  Plotly.newPlot('chSpinDual',[plTraceP(PY,m('spin'),'Active after 3 years',C.pink,{hovertemplate:'%{x}: <b>%{y:.1f}</b><extra>Active after 3 years</extra>'}),plTraceP(PY,m('sp_new'),'Newly registered',C.blue,{yaxis:'y2',hovertemplate:'%{x}: <b>%{y:.1f}</b><extra>Newly registered</extra>'})],
+    L({height:440,margin:{l:60,r:60,t:20,b:100},legend:{orientation:'h',y:-0.22},xaxis:{tickangle:-45},yaxis:{title:{text:'Spin-outs active after 3 years, '+u,font:{size:12,color:C.pink}},gridcolor:'#eeebf1'},yaxis2:{overlaying:'y',side:'right',title:{text:'Newly registered, '+u,font:{size:12,color:C.blue}},showgrid:false}}),CFG);
+  Plotly.newPlot('chStartups',[['spin','Spin-outs',C.pd],['staff_su','Staff start-ups',C.pink],['stud_su','Student start-ups',C.blue]].map(([k,n,c])=>({type:'bar',x:PY,y:m(k),name:n,marker:{color:c},hovertemplate:'%{x}: <b>%{y:.1f}</b><extra>'+n+'</extra>'})),
+    L({barmode:'stack',height:440,margin:{l:60,r:20,t:20,b:100},legend:{orientation:'h',y:-0.22},xaxis:{tickangle:-45},yaxis:{title:{text:'Active after 3+ years, '+u,font:{size:12}},gridcolor:'#eeebf1'}}),CFG);
+  const per=PY.map((_,i)=>{const s=P.s.sp_fte[i],n=P.s.spin[i];return s!=null&&n>0?s/n:null;});
+  Plotly.newPlot('chSpinEmp',[['sp_fte','Spin-outs',C.pd],['staff_fte','Staff start-ups',C.pink],['stud_fte','Student start-ups',C.blue]].map(([k,n,c])=>({type:'bar',x:PY,y:m(k),name:n+' (FTE)',marker:{color:c},hovertemplate:'%{x}: <b>%{y:,.0f}</b> FTE<extra>'+n+'</extra>'})).concat([plTraceP(PY,per,'FTE per surviving spin-out',C.green,{yaxis:'y2',line:{color:C.green,width:3,dash:'dot'},hovertemplate:'%{x}: <b>%{y:.1f}</b> FTE per spin-out<extra></extra>'})]),
+    L({barmode:'stack',height:440,margin:{l:60,r:60,t:20,b:100},legend:{orientation:'h',y:-0.22},xaxis:{tickangle:-45},yaxis:{title:{text:'Employment (FTE), '+u,font:{size:12}},gridcolor:'#eeebf1'},yaxis2:{overlaying:'y',side:'right',title:{text:'FTE per spin-out',font:{size:12,color:C.green}},showgrid:false,rangemode:'tozero'}}),CFG);
+  Plotly.newPlot('chSpinInv',[{type:'bar',x:PY,y:m('ext',v=>v/1000),name:'External investment (£m)',marker:{color:C.pd},hovertemplate:'%{x}: <b>£%{y:.1f}m</b><extra>External investment</extra>'},plTraceP(PY,m('spin'),'Spin-outs active after 3 years',C.pink,{yaxis:'y2',hovertemplate:'%{x}: <b>%{y:.1f}</b><extra>Spin-outs</extra>'})],
+    L({height:440,margin:{l:60,r:60,t:20,b:100},legend:{orientation:'h',y:-0.22},xaxis:{tickangle:-45},yaxis:{title:{text:'£m, real, '+u,font:{size:12}},gridcolor:'#eeebf1',rangemode:'tozero'},yaxis2:{overlaying:'y',side:'right',title:{text:'Spin-outs, '+u,font:{size:12,color:C.pink}},showgrid:false,rangemode:'tozero'}}),CFG);
+  const sp=plAmt(P,'spin',y), nw=plAmt(P,'sp_new',y), fte=P.s.sp_fte[y], ext=plM('ext')(P,y);
+  const par=[`<b>How many spin-outs does ${P.name} produce, and what do they employ?</b> There are <b>${plFmt(P.s.spin[y],'n')}</b> surviving spin-outs${PS.scale==='per'?` (${plFmt(sp,'n1')} per university)`:''}, with ${plFmt(P.s.sp_new[y],'n')} newly registered in ${PY[y]}. `+(fte?`Active spin-outs employ an estimated <b>${Math.round(fte).toLocaleString('en-GB')} FTE</b>${P.s.spin[y]>0?` (${(fte/P.s.spin[y]).toFixed(1)} per surviving spin-out)`:''}. `:'')+(ext?`They have drawn an estimated £${ext.toFixed(1)}m of external investment ${u}.`:'')];
+  document.getElementById('plHead3').innerHTML=par.map(t=>`<p>${t}</p>`).join('');
 }

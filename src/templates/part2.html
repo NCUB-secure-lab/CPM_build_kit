@@ -276,7 +276,7 @@
 <section class="tab" id="tab-place">
   <div class="eyebrow">Tab 5</div>
   <h2>Place explorer</h2>
-  <p class="lede">Pick a place and follow the story of university–business collaboration there: from the business R&amp;D backdrop, through how collaboration is doing against its own history and against other places, to what it produces. Universities are located at their <b>main campus</b>, so income is recorded where the university is based, not where its partners are. Money and activity are shown <b>per university</b> by default and in real 2024/25 prices.</p>
+  <p class="lede">Pick a place. <b>Part 1</b> shows the place on its own: collaboration income, commercialisation and spin-outs. <b>Part 2</b> compares it with the UK, England and other places, starting from the business R&amp;D backdrop. Universities are located at their <b>main campus</b>, so income is recorded where the university is based, not where its partners are. Money and activity are shown <b>per university</b> by default and in real 2024/25 prices.</p>
 
   <div class="placebar card" id="placeBar">
     <div class="pl-field"><label>Geography</label>
@@ -307,12 +307,94 @@
     </div>
   </div>
 
+  <div class="partbar"><span>PART 1</span><h2>The place at a glance</h2><p>Only the picked place here: its headline numbers on collaboration income, commercialisation and spin-outs. Comparisons follow in Part 2.</p></div>
+
+  <div class="chapter"><div class="chap-n">A</div><h3 class="chap-h">Business collaboration income: how is it doing?</h3></div>
+  <div class="story" id="plHead1"></div>
+  <div class="kpis" id="plHeadKpis" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr));margin-bottom:12px"></div>
+  <div class="section card">
+    <div class="charthead"><h3>Collaboration income against the economy and IP investment</h3><span class="note">Index, first year = 100</span></div>
+    <div id="chBciMacro" class="chart"></div>
+    <div class="src"><span id="plMacroSrc"></span></div>
+  </div>
+  <div class="section card">
+    <div class="charthead"><h3>What drove the change in income?</h3><span class="note">Contribution, percentage points</span></div>
+    <div id="chBciDecomp" class="chart"></div>
+    <div class="src">Each stream's contribution = its share of income in the starting year × its % change; contributions add up to the total change. Left: whole period. Right: latest year.</div>
+  </div>
+  <div class="section card">
+    <div class="charthead"><h3>Annual growth rate of collaboration income</h3><span class="note">% change on the previous year</span></div>
+    <div id="chBciYoy" class="chart"></div>
+    <div class="src"><span id="plYoySrc"></span></div>
+  </div>
+  <div class="section card">
+    <div class="charthead"><h3>Income by stream and by size of business</h3><span class="note"><span id="plStackNote"></span></span></div>
+    <div id="chBciStack" class="chart"></div>
+    <div class="src">Real 2024/25 prices. Left: contract research, consultancy, facilities &amp; equipment and IP. Right: SMEs and large businesses.</div>
+  </div>
+
+  <div class="chapter"><div class="chap-n">B</div><h3 class="chap-h">Commercialisation: what does collaboration turn into?</h3></div>
+  <div class="story" id="plHead2"></div>
+  <div class="section grid2">
+  <div class="section card">
+    <div class="charthead"><h3>IP licensing income and licences granted</h3><span class="note"></span></div>
+    <div id="chPlIp" class="chart"></div>
+    <div class="src">Licensing income by size of business (real 2024/25 prices) and licences granted. Dashed line = all-time average income.</div>
+  </div>
+  <div class="section card">
+    <div class="charthead"><h3>Patents</h3><span class="note"></span></div>
+    <div id="chPatA" class="chart"></div>
+    <div class="src">Patents filed, granted, and filed by external parties with a university co-applicant.</div>
+  </div>
+  </div>
+  <div class="section card">
+    <div class="charthead"><h3>Industry funding to universities and inward investment</h3><span class="note"></span></div>
+    <div id="chIndFund" class="chart"></div>
+    <div class="src"><span id="plFundSrc"></span></div>
+  </div>
+
+  <div class="chapter"><div class="chap-n">C</div><h3 class="chap-h">Spin-outs: how many, how fast, and what do they employ?</h3></div>
+  <div class="story" id="plHead3"></div>
+  <div class="section grid2">
+  <div class="section card">
+    <div class="charthead"><h3>New and surviving spin-outs</h3><span class="note"></span></div>
+    <div id="chSpinDual" class="chart"></div>
+    <div class="src">Spin-outs active after 3+ years (left axis) and newly registered spin-outs in the year (right axis). CPM definition: HE-owned plus other spin-outs.</div>
+  </div>
+  <div class="section card">
+    <div class="charthead"><h3>Spin-outs, staff and student start-ups</h3><span class="note"></span></div>
+    <div id="chStartups" class="chart"></div>
+    <div class="src">Firms still active after at least 3 years, by type of origin. Staff and student start-ups are reported separately from the headline spin-out measure.</div>
+  </div>
+  </div>
+  <div class="section grid2">
+  <div class="section card">
+    <div class="charthead"><h3>Employment in spin-outs and start-ups</h3><span class="note"></span></div>
+    <div id="chSpinEmp" class="chart"></div>
+    <div class="src">Estimated current employment (FTE) of active firms. Line: FTE per surviving spin-out.</div>
+  </div>
+  <div class="section card">
+    <div class="charthead"><h3>Spin-outs and external investment</h3><span class="note"></span></div>
+    <div id="chSpinInv" class="chart"></div>
+    <div class="src">Estimated external investment received by active spin-outs (real 2024/25 prices, left axis) and surviving spin-outs (right axis).</div>
+  </div>
+  </div>
+
+  <div class="partbar"><span>PART 2</span><h2>How does it compare?</h2><p>The same place against the UK, England and any places you add, starting from the business R&amp;D backdrop.</p></div>
+
   <div class="chapter"><div class="chap-n">1</div><h3 class="chap-h">What is happening to business R&amp;D?</h3></div>
   <div class="story" id="plStory1"></div>
+  <div class="section grid2">
   <div class="section card">
-    <div class="charthead"><h3>Business expenditure on R&amp;D over time</h3><span class="note"><span id="plBerdTrendNote"></span></span></div>
+    <div class="charthead"><h3>Business R&amp;D in this place</h3><span class="note"><span id="plBerdTrendNote"></span></span></div>
     <div id="chBerdTrend" class="chart"></div>
-    <div class="src"></div>
+    <div class="src"><span id="plBerdTrendSrc"></span></div>
+  </div>
+  <div class="section card">
+    <div class="charthead"><h3>UK business R&amp;D since 2014</h3><span class="note">£bn</span></div>
+    <div id="chBerdUK" class="chart"></div>
+    <div class="src">Longer UK series as shown in the NCUB 2025 context figure. The place charts use the ONS BERD 2024 release (2022 to 2024), which has been revised since.</div>
+  </div>
   </div>
   <div class="section grid2">
   <div class="section card">
@@ -396,17 +478,12 @@
   <div class="chapter"><div class="chap-n">6</div><h3 class="chap-h">What does collaboration produce?</h3></div>
   <div class="story" id="plStory6"></div>
   <div class="section card">
-    <div class="charthead"><h3>IP licensing income and licences granted</h3><span class="note"></span></div>
-    <div id="chPlIp" class="chart tall"></div>
-    <div class="src">Licensing income by size of business (real 2024/25 prices) and licences granted. Dashed line = all-time average income.</div>
-  </div>
-  <div class="section card">
-    <div class="charthead"><h3>Patents</h3><span class="note"></span></div>
+    <div class="charthead"><h3>Patents compared</h3><span class="note"></span></div>
     <div id="chPlPatents" class="chart tall"></div>
     <div class="src">Patents filed, granted and filed by external parties with a university co-applicant.</div>
   </div>
   <div class="section card">
-    <div class="charthead"><h3>Spin-outs</h3><span class="note"></span></div>
+    <div class="charthead"><h3>Spin-outs compared</h3><span class="note"></span></div>
     <div id="chPlSpin" class="chart"></div>
     <div class="src">Surviving spin-outs (3+ years, CPM definition: HE-owned plus other spin-outs) and academic staff.</div>
   </div>

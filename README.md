@@ -270,3 +270,8 @@ region names in the CSV ("Eastern" → "East of England",
 Chapter 1 uses ONS BERD. The UK series and the industry / international charts come from `input/berd_industry_change.csv` and `input/berd_international.csv` (digitised from NCUB figures).
 For the picked place's own business R&D trend and growth vs UK/England, add `input/berd_region.csv` (see `berd_region_TEMPLATE.csv`: year,area,level,value,price[real|nominal]; area = ITL1 name, "England" or "United Kingdom"). Nominal values are deflated with the CPM price index.
 Note: master_panel money columns are nominal; place_data.py deflates them to 2024/25 prices.
+
+## Place explorer v3 (Part 1 place-only, Part 2 comparisons)
+- `input/berd2024official.xlsx` (ONS BERD 2024): Table 7a (ITL1) and 18 (ITL2) feed the regional business R&D charts (2022 to 2024, deflated); Table 5 feeds the industry % change chart. TTWAs fall back to their region; ITL2 areas whose names changed in 2024 fall back to their ITL1 region.
+- Spin-out detail (new registrations, staff/student start-ups, FTE, turnover) is merged from `input/table-4e.csv`.
+- Optional: `input/regional_macro.csv` (area, year, gdp_real, ipp_real) adds regional GDP and IP investment lines to the BCI index chart; `input/fdi_projects.csv` (year, origin, projects[, area]) adds inward investment projects to the industry funding chart. Templates: `*_TEMPLATE.csv`.
