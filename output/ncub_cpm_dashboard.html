@@ -847,6 +847,11 @@ footer{text-align:center;font-size:12px;color:#8b8195;padding:30px 0 10px}
     <div class="src"><span id="plCagrSrc"></span></div>
   </div>
   <div class="section card">
+    <div class="charthead"><h3>How many universities are growing or shrinking, place by place?</h3><span class="note">Share of universities by five-year growth band</span></div>
+    <div id="chPlBands" class="chart tall"></div>
+    <div class="src"><span id="plBandsSrc"></span></div>
+  </div>
+  <div class="section card">
     <div class="charthead"><h3>Growth since the start of the series</h3><span class="note"></span></div>
     <div id="chPlIdx" class="chart"></div>
     <div class="src">Total BCI indexed, first year = 100. With "All providers" the index also reflects providers entering the panel.</div>
@@ -3218,7 +3223,7 @@ function renderPlace(){
 function plRender(){
   const E=plEntities(); if(!E.length) return;
   plChips(E); plKpis(E); plMap(E); plProfile(E);
-  plHeads(E); plBerd(E); plCpm(E); plBci(E); plTypes(E); plCagrChart(E); plClusters(E); plProducts(E); plEco(E);
+  plHeads(E); plBerd(E); plCpm(E); plBci(E); plTypes(E); plCagrChart(E); plBands(E); plClusters(E); plProducts(E); plEco(E);
   plStories(E);
 }
 function plChips(E){
@@ -3818,6 +3823,40 @@ function plHeadSpin(P,u,y){
   const sp=plAmt(P,'spin',y), nw=plAmt(P,'sp_new',y), fte=P.s.sp_fte[y], ext=plM('ext')(P,y);
   const par=[`<b>How many spin-outs does ${P.name} produce, and what do they employ?</b> There are <b>${plFmt(P.s.spin[y],'n')}</b> surviving spin-outs${PS.scale==='per'?` (${plFmt(sp,'n1')} per university)`:''}, with ${plFmt(P.s.sp_new[y],'n')} newly registered in ${PY[y]}. `+(fte?`Active spin-outs employ an estimated <b>${Math.round(fte).toLocaleString('en-GB')} FTE</b>${P.s.spin[y]>0?` (${(fte/P.s.spin[y]).toFixed(1)} per surviving spin-out)`:''}. `:'')+(ext?`They have drawn an estimated £${ext.toFixed(1)}m of external investment ${u}.`:'')];
   document.getElementById('plHead3').innerHTML=par.map(t=>`<p>${t}</p>`).join('');
+}
+
+
+/* ---------- share of universities by growth band, place by place ---------- */
+const PL_BANDS=[['Significant increase','#FEDB00'],['Moderate increase',C.blue],['Stable','#aaa5bb'],['Moderate decline',C.pink],['Significant decline',C.pd]];
+function plBandOf(p,k){
+  const a=p.s[k], b=a[LY-5], c=a[LY];
+  if(b==null||b<100||c==null) return null;               // minimum £100k base, as in the Growth analysis tab
+  const g=(Math.pow(c/b,1/5)-1)*100;
+  return g>=10?0:g>=3?1:g>-3?2:g>-10?3:4;
+}
+function plBandShares(provs,k){
+  const n=[0,0,0,0,0]; let t=0;
+  provs.forEach(p=>{const b=plBandOf(p,k); if(b!=null){n[b]++;t++;}});
+  return {t,pct:n.map(v=>t?v/t*100:0),n};
+}
+function plBands(E){
+  const k=PX.cagrSeg, A=plAreas(PS.level), segLab=k==='bci'?'total BCI':k==='sme'?'SME BCI':'large-business BCI';
+  const rows=[], ext=PS.extra;
+  rows.push({id:'__uk',name:'All providers (UK)',col:'#222',w:0,r:plBandShares(plSetF(PLP.provs),k)});
+  const pl=A[PS.place]; rows.push({id:PS.place,name:pl.name,col:C.pink,w:1,r:plBandShares(plSetF(pl.provs),k)});
+  const others=Object.values(A).filter(a=>a.id!==PS.place).map(a=>({id:a.id,name:a.name,col:ext.includes(a.id)?C.blue:'#444',w:ext.includes(a.id)?1:0,r:plBandShares(plSetF(a.provs),k)}))
+    .filter(o=>o.r.t>=(PS.level==='itl1'?1:3)||ext.includes(o.id)).sort((p,q)=>(q.r.pct[0]+q.r.pct[1])-(p.r.pct[0]+p.r.pct[1])||q.r.t-p.r.t);
+  const all=rows.concat(others), rev=all.slice().reverse();
+  const lbl=r=>{const t=plShort(r.name)+' ('+r.r.t+')'; return r.id===PS.place?'<b style="color:'+C.pink+'">▶ '+t+'</b>':r.w?'<b style="color:'+C.blue+'">'+t+'</b>':r.id==='__uk'?'<b>'+t+'</b>':t;};
+  const cats=rev.map(lbl);
+  const tr=PL_BANDS.map((b,i)=>({type:'bar',orientation:'h',name:b[0],y:cats,x:rev.map(r=>+r.r.pct[i].toFixed(1)),marker:{color:b[1]},
+    text:rev.map(r=>r.r.pct[i]>=5?Math.round(r.r.pct[i])+'%':''),textposition:'inside',insidetextfont:{size:11,color:i===2?'#222':i===0?'#222':'#fff'},
+    customdata:rev.map(r=>[r.r.n[i],r.r.t]),hovertemplate:'<b>%{y}</b><br>'+b[0]+': %{x:.0f}% (%{customdata[0]} of %{customdata[1]} universities)<extra></extra>'}));
+  const pi=rev.findIndex(r=>r.id===PS.place), H=Math.max(380,all.length*(PS.level==='ttwa'?24:30)+120);
+  Plotly.newPlot('chPlBands',tr,L({barmode:'stack',height:H,margin:{l:260,r:20,t:20,b:70},legend:{orientation:'h',y:-0.08,traceorder:'normal'},
+    xaxis:{range:[0,100],ticksuffix:'%',gridcolor:'#eeebf1'},yaxis:{automargin:true,tickfont:{size:PS.level==='ttwa'?10.5:12}},
+    shapes:[{type:'rect',xref:'paper',yref:'y',x0:0,x1:1,y0:pi-0.5,y1:pi+0.5,line:{color:C.pink,width:2.5},fillcolor:'rgba(255,0,144,0.06)',layer:'above'}]}),CFG);
+  document.getElementById('plBandsSrc').textContent='Share of universities in each growth band, based on the compound annual growth rate of '+segLab+' over '+PY[LY-5]+' to '+PY[LY]+', real prices. Significant = 10%+ a year, moderate = 3–10%, stable = within ±3%. Universities with under £100k in the base year are excluded; the number in brackets is the universities counted. The picked place is outlined in pink'+(ext.length?', places you added in blue':'')+'. Total / SMEs / Large follows the toggle above.';
 }
 
 /* boot */

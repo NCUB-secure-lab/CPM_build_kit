@@ -126,7 +126,7 @@ function renderPlace(){
 function plRender(){
   const E=plEntities(); if(!E.length) return;
   plChips(E); plKpis(E); plMap(E); plProfile(E);
-  plHeads(E); plBerd(E); plCpm(E); plBci(E); plTypes(E); plCagrChart(E); plBands(E); plClusters(E); plProducts(E); plEco(E);
+  plHeads(E); plBerd(E); plCpm(E); plBci(E); plTypes(E); plCagrChart(E); plBands(E); plClusters(E); plScatter(E); plProducts(E); plEco(E);
   plStories(E);
 }
 function plChips(E){
@@ -597,6 +597,19 @@ function plPptxBuild(){
   line(sl,[['patf','Filed'],['patg','Granted'],['pate','External parties']].map((k,i)=>({n:k[1],c:[PUR,'FF0090','0085CA'][i],v:PY.map((_,j)=>{const v=plAmt(P,k[0],j);return v==null?null:+v.toFixed(2);})})),'0.0');
   sl=body('6 · Outcomes','Surviving spin-outs '+u,'CPM definition: HE-owned plus other spin-outs surviving 3+ years',[plFmt(plAmt(P,'spin',y),PS.scale==='per'?'n1':'n'),'spin-outs '+u+', '+PY[y],'Benchmarks: '+(B.map(b=>b.name+' '+plFmt(plAmt(b,'spin',y),PS.scale==='per'?'n1':'n')).join(', ')||'–')+'.']);
   line(sl,E.map(e=>({n:e.name,c:e.col,v:PY.map((_,k)=>{const v=plAmt(e,'spin',k);return v==null?null:+v.toFixed(2);})})),'0.0');
+  // growth bands and scatter
+  {const k='bci', A2=plAreas(PS.level), bandRows=[{n:'All providers (UK)',r:plBandShares(plSetF(PLP.provs),k)},{n:P.name,r:plBandShares(plSetF(A2[PS.place].provs),k)}]
+     .concat(PS.extra.map(id=>A2[id]).filter(Boolean).map(a=>({n:a.name,r:plBandShares(plSetF(a.provs),k)})));
+   Object.values(A2).filter(a=>a.id!==PS.place&&!PS.extra.includes(a.id)).map(a=>({n:a.name,r:plBandShares(plSetF(a.provs),k)})).filter(o=>o.r.t>=(PS.level==='itl1'?1:4)).sort((p,q)=>(q.r.pct[0]+q.r.pct[1])-(p.r.pct[0]+p.r.pct[1])).slice(0,PS.level==='itl1'?12:14).forEach(o=>bandRows.push(o));
+   sl=body('4 · Growth','How many universities are growing or shrinking?','Share of universities by five-year growth band, total BCI, '+PY[y-5]+' to '+PY[y],[String(bandRows[1].r.t),'universities counted in '+P.name,'Significant = 10%+ a year, moderate 3–10%, stable within ±3%. '+P.name+' is the second bar.']);
+   sl.addChart(pp.charts.BAR,PL_BANDS.map((b,i)=>({name:b[0],labels:bandRows.map(r=>r.n+' ('+r.r.t+')'),values:bandRows.map(r=>+r.r.pct[i].toFixed(1))})),Object.assign({},chartBox,gridOpt,{barDir:'bar',barGrouping:'percentStacked',catAxisOrientation:'maxMin',chartColors:PL_BANDS.map(b=>hx(b[1])),catAxisLabelFontSize:8,valAxisLabelFormatCode:'0%',showValue:false}));
+   const spts=plScatterPts(), mine2=new Set(area.provs.map(p=>p.t).filter(Boolean)), oth=spts.filter(p=>!mine2.has(p.t)), me2=spts.filter(p=>mine2.has(p.t));
+   if(spts.length){
+     sl=body('7 · Place','Collaboration income and the knowledge economy','BCI per local job (£) against knowledge-intensive employment (%), '+PY[y],[String(spts.length),'areas with a university','Each point is a travel-to-work area; '+P.name+(me2.length?' in pink.':' has no travel-to-work-area data.')]);
+     const X=['X'].concat(oth.map(p=>p.x)).concat(me2.map(p=>p.x));
+     sl.addChart(pp.charts.SCATTER,[{name:'X',values:oth.map(p=>p.x).concat(me2.map(p=>p.x))},{name:'Other areas',values:oth.map(p=>Math.round(p.y)).concat(me2.map(()=>null))},{name:P.name,values:oth.map(()=>null).concat(me2.map(p=>Math.round(p.y)))}],Object.assign({},chartBox,{w:8.6,lineSize:0,lineDataSymbolSize:9,chartColors:['B8B0C9',PNK],showLegend:true,legendPos:'b',valAxisLogScaleBase:10,showValAxisTitle:true,valAxisTitle:'BCI per job (£, log scale)',showCatAxisTitle:true,catAxisTitle:'Knowledge-intensive jobs (%)',valGridLine:{color:'EEEBF1',size:0.5}}));
+   }
+  }
   // 10 universities
   sl=body('7 · Place','Universities in '+P.name,'Main campus in this '+lvlTxt+', '+PY[y],[String(area.provs.length),'universities','Listed by business collaboration income.']);
   const h2=['University','BCI portfolio group','BCI','Spin-outs'].map(t=>({text:t,options:{bold:true,color:'FFFFFF',fill:{color:PUR},fontSize:10}}));
@@ -760,4 +773,32 @@ function plBands(E){
     xaxis:{range:[0,100],ticksuffix:'%',gridcolor:'#eeebf1'},yaxis:{automargin:true,tickfont:{size:PS.level==='ttwa'?10.5:12}},
     shapes:[{type:'rect',xref:'paper',yref:'y',x0:0,x1:1,y0:pi-0.5,y1:pi+0.5,line:{color:C.pink,width:2.5},fillcolor:'rgba(255,0,144,0.06)',layer:'above'}]}),CFG);
   document.getElementById('plBandsSrc').textContent='Share of universities in each growth band, based on the compound annual growth rate of '+segLab+' over '+PY[LY-5]+' to '+PY[LY]+', real prices. Significant = 10%+ a year, moderate = 3–10%, stable = within ±3%. Universities with under £100k in the base year are excluded; the number in brackets is the universities counted. The picked place is outlined in pink'+(ext.length?', places you added in blue':'')+'. Total / SMEs / Large follows the toggle above.';
+}
+
+
+/* ---------- scatter: collaboration income per local job vs knowledge-intensive employment ---------- */
+function plScatterPts(){
+  const by={}; PLP.provs.forEach(p=>{ if(!p.t) return; (by[p.t]=by[p.t]||[]).push(p); });
+  return Object.keys(by).map(t=>{const c=PLP.ttwa[t]; if(!c||!c.ki||!c.jobs) return null; const b=by[t].reduce((s,p)=>s+(p.s.bci[LY]||0),0); if(!(b>0)) return null;
+    return {t,name:c.name,type:c.type||'–',x:c.ki*100,y:b*1000/c.jobs,jobs:c.jobs,b,provs:by[t]};}).filter(Boolean);
+}
+function plRank(a){const o=a.map((v,i)=>[v,i]).sort((p,q)=>p[0]-q[0]), r=Array(a.length); o.forEach((e,k)=>r[e[1]]=k+1); return r;}
+function plSpearman(x,y){const a=plRank(x),b=plRank(y),n=a.length,ma=(n+1)/2; let s=0,sa=0,sb=0; for(let i=0;i<n;i++){s+=(a[i]-ma)*(b[i]-ma);sa+=(a[i]-ma)**2;sb+=(b[i]-ma)**2;} return s/Math.sqrt(sa*sb);}
+function plScatter(E){
+  const pts=plScatterPts(), A=plAreas(PS.level)[PS.place], mine=new Set(A.provs.map(p=>p.t).filter(Boolean)), extT={};
+  PS.extra.forEach((id,i)=>{const a=plAreas(PS.level)[id]; if(a) a.provs.forEach(p=>{if(p.t) extT[p.t]=PL_PAL[i%PL_PAL.length];});});
+  const grp=(f)=>pts.filter(f), oth=grp(p=>!mine.has(p.t)&&!extT[p.t]), ext=grp(p=>!mine.has(p.t)&&extT[p.t]), me=grp(p=>mine.has(p.t));
+  const mk=(arr,name,col,size,showText)=>({type:'scatter',mode:showText?'markers+text':'markers',name,x:arr.map(p=>p.x),y:arr.map(p=>p.y),text:showText?arr.map(p=>p.name):undefined,textposition:'top center',textfont:{size:12,color:col},
+    marker:{color:col,size:size,line:{color:'#fff',width:1},opacity:size>10?1:0.75},customdata:arr.map(p=>[p.name,p.type,p.jobs,p.b]),
+    hovertemplate:'<b>%{customdata[0]}</b><br>%{customdata[1]}<br>Knowledge-intensive jobs: %{x:.0f}%<br>BCI per job: £%{y:,.0f}<br>%{customdata[2]:,.0f} jobs · BCI £%{customdata[3]:,.0f}k<extra></extra>'});
+  const tr=[mk(oth,'Other travel-to-work areas','#b8b0c9',8,false)];
+  if(ext.length) tr.push(Object.assign(mk(ext,'Places compared',C.blue,12,true),{marker:{color:ext.map(p=>extT[p.t]),size:13,line:{color:'#fff',width:1.5}}}));
+  if(me.length) tr.push(mk(me,A.name,C.pink,16,true)); 
+  const rho=pts.length>3?plSpearman(pts.map(p=>p.x),pts.map(p=>p.y)):null;
+  const xs=pts.map(p=>p.x), med=plMedian(xs), ys=pts.map(p=>p.y), medy=plMedian(ys);
+  Plotly.newPlot('chPlScatter',tr,L({height:560,margin:{l:80,r:30,t:20,b:70},legend:{orientation:'h',y:-0.12},
+    xaxis:{title:{text:'Knowledge-intensive jobs, % of employment',font:{size:12}},ticksuffix:'%',gridcolor:'#eeebf1'},
+    yaxis:{type:'log',title:{text:'Collaboration income per local job (£, log scale)',font:{size:12}},tickprefix:'£',gridcolor:'#eeebf1'},
+    shapes:[{type:'line',x0:med,x1:med,yref:'paper',y0:0,y1:1,line:{color:'#9a90a6',dash:'dot',width:1}},{type:'line',xref:'paper',x0:0,x1:1,y0:medy,y1:medy,line:{color:'#9a90a6',dash:'dot',width:1}}]}),CFG);
+  document.getElementById('plScatterSrc').textContent='BCI '+PY[LY]+' (real prices) divided by employee jobs (BRES 2024) in the travel-to-work area of each university\'s main campus. '+pts.length+' areas; dotted lines are medians. '+(rho!=null?'Rank correlation ρ = '+rho.toFixed(2)+'. ':'')+'Income is recorded where the university is based, not where partners are. The picked place is pink'+(PS.extra.length?', places compared are coloured':'')+(me.length?'.':'; the picked place has no travel-to-work area data.');
 }

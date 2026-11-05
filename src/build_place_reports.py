@@ -17,7 +17,7 @@ from pptx import Presentation
 from pptx.util import Emu, Pt, Inches
 from pptx.dml.color import RGBColor
 from pptx.chart.data import CategoryChartData, XyChartData
-from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION, XL_LABEL_POSITION
+from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION, XL_LABEL_POSITION, XL_TICK_LABEL_POSITION
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
 
@@ -63,6 +63,17 @@ class Data:
         self.ttwa_ctx = (p[p.ttwa_code.notna()].drop_duplicates("ttwa_code")
                          .set_index("ttwa_name")[["ttwa_type", "ttwa_ki_share", "ttwa_gva_per_job_2023", "ttwa_jobs_bres2024",
                                                   "ttwa_composite_pct", "ttwa_productivity_pct", "ttwa_knowledge_pct", "ttwa_legacy_share"]])
+        yb, yl = YEARS[self.ty - 5], YEARS[self.ty]
+        piv = d.pivot_table(index="ukprn", columns="academic_year", values="m_bci", aggfunc="sum")
+        b0, b1 = piv[yb], piv[yl]
+        g = ((b1 / b0) ** (1 / 5) - 1) * 100
+        band = pd.Series(np.nan, index=piv.index)
+        ok = (b0 >= 100) & b1.notna()
+        band[ok] = np.select([g[ok] >= 10, g[ok] >= 3, g[ok] > -3, g[ok] > -10], [0, 1, 2, 3], 4)
+        self.band = band
+        cpi = {a: float(v) for a, v in d.groupby("academic_year")["ay_cpi"].first().items()}
+        self.cpi = cpi
+        self.berd = pdx.load_berd(cpi)
         self.itl2_berd = p[p.campus_itl2.notna()].drop_duplicates("campus_itl2").set_index("a_itl2")["itl2_berd_per_job"]
 
     def _uk(self, d):
@@ -279,11 +290,12 @@ def style_chart(ch, legend=True, size=10):
 def bar_chart(deck, slide, names, values, colors, fmt='#,##0.0', series="Value"):
     cd = CategoryChartData()
     cd.categories = names
-    cd.add_series(series, values)
+    cd.add_series(series, [None if (v is None or (isinstance(v, float) and np.isnan(v))) else v for v in values])
     gf = slide.shapes.add_chart(XL_CHART_TYPE.BAR_CLUSTERED, *[Emu(v) for v in CH], cd)
     ch = gf.chart
     style_chart(ch, legend=False, size=10)
     ch.category_axis.reverse_order = True
+    ch.category_axis.tick_label_position = XL_TICK_LABEL_POSITION.LOW
     ch.category_axis.format.line.fill.background()
     va = ch.value_axis
     va.has_major_gridlines = True
@@ -330,7 +342,7 @@ def stack100_chart(deck, slide, cats, series, colors):
     cd = CategoryChartData()
     cd.categories = cats
     for n, v in series:
-        cd.add_series(n, v)
+        cd.add_series(n, [None if (x is None or (isinstance(x, float) and np.isnan(x))) else x for x in v])
     gf = slide.shapes.add_chart(XL_CHART_TYPE.BAR_STACKED_100, *[Emu(v) for v in CH], cd)
     ch = gf.chart
     style_chart(ch)
@@ -342,6 +354,49 @@ def stack100_chart(deck, slide, cats, series, colors):
         s.format.fill.solid()
         s.format.fill.fore_color.rgb = rgb(c)
     return ch
+
+
+
+def stacked_col_chart(deck, slide, cats, series, colors, fmt="0"):
+    cd = CategoryChartData()
+    cd.categories = cats
+    for n, v in series:
+        cd.add_series(n, [0 if (x is None or pd.isna(x)) else float(x) for x in v])
+    gf = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_STACKED, *[Emu(v) for v in CH], cd)
+    ch = gf.chart
+    style_chart(ch, legend=True)
+    ch.plots[0].gap_width = 50
+    ch.value_axis.major_gridlines.format.line.color.rgb = rgb("EEEBF1")
+    ch.value_axis.tick_labels.font.size = Pt(9)
+    ch.category_axis.tick_labels.font.size = Pt(9)
+    for i, c in enumerate(colors):
+        ch.series[i].format.fill.solid(); ch.series[i].format.fill.fore_color.rgb = rgb(c)
+    return ch
+
+
+def berd_real(D, y):
+    k = f"{y}/{str((y + 1) % 100).zfill(2)}"
+    return D.cpi.get(k, 100.0) / 100.0
+
+
+def berd_series(D, names):
+    """real £m by calendar year for the first name that has ONS BERD data"""
+    R = D.berd.get("region") or []
+    norm = lambda x: re.sub(r"[^a-z0-9]", "", str(x).lower())
+    for n in names:
+        rows = [r for r in R if norm(r["a"]) == norm(n)]
+        if rows:
+            return n, {r["y"]: r["v"] / berd_real(D, r["y"]) for r in rows}
+    return None, {}
+
+
+BANDS = [("Significant increase", "FEDB00"), ("Moderate increase", "0085CA"), ("Stable", "AAA5BB"), ("Moderate decline", "FF0090"), ("Significant decline", "3E1151")]
+
+
+def band_shares(D, ukprns):
+    b = D.band.reindex(list(ukprns)).dropna()
+    n = len(b)
+    return n, [round(float((b == i).sum()) / n * 100, 1) if n else 0 for i in range(5)]
 
 
 def table(deck, slide, header, rows, widths, x=495300, y=1800000):
@@ -399,6 +454,62 @@ def build_area_deck(D, lvl, area, path):
     ins = area_insights(D, lvl, area)
     findings_slide(deck, f"{area}: key findings", ins)
 
+
+    # ───────── PART 1: the place at a glance (place only) ─────────
+    u_n = D.series(lvl, area, "n")
+    bci_s = D.series(lvl, area, "bci")
+    i0 = int(np.argmax(bci_s.notna().values & (bci_s.fillna(0).values > 0)))
+    yoy = [None] + [((bci_s.iloc[i] / bci_s.iloc[i - 1] - 1) * 100 if bci_s.iloc[i - 1] and bci_s.iloc[i - 1] > 0 and pd.notna(bci_s.iloc[i]) else None) for i in range(1, len(YEARS))]
+    g5a = cagr(bci_s.iloc[D.ty - 5], bci_s.iloc[D.ty])
+    s = deck.body("Part 1 · Collaboration income", f"Business collaboration income in {area}: {pct(yoy[-1],1,True) if yoy[-1] is not None else 'n/a'} on the year",
+                  "Annual growth of BCI (%), real prices",
+                  panel=(pct(g5a, 1, True) if not pd.isna(g5a) else "n/a", "a year over five years (CAGR)", f"BCI was {gbp(bci_s.iloc[D.ty])} in {y}, {pct((bci_s.iloc[D.ty]/bci_s.iloc[4]-1)*100,0,True) if bci_s.iloc[4] else 'n/a'} against 2018/19."))
+    line_chart(deck, s, YEARS, [("BCI growth on previous year (%)", [round(v, 1) if v is not None else None for v in yoy])], [PNK], fmt="0")
+    parts_c = [("Consultancy", "cons"), ("Facilities & equipment", "fac"), ("Contract research", "cr"), ("Licensing / IP", "ip"), ("SME", "sme"), ("Large business", "lc")]
+    T0, T1 = bci_s.iloc[i0], bci_s.iloc[D.ty]
+    vals = [round(((D.series(lvl, area, k).iloc[D.ty] or 0) - (D.series(lvl, area, k).iloc[i0] or 0)) / T0 * 100, 1) for _, k in parts_c]
+    tot = round((T1 / T0 - 1) * 100, 1)
+    s = deck.body("Part 1 · Collaboration income", "What drove the change in income?", f"Contribution to change in BCI, percentage points, {YEARS[i0]} to {y}",
+                  panel=(pct(tot, 1, True), "total change in BCI", "Contribution = share of income in the first year × % change of that stream or business size."))
+    bar_chart(deck, s, ["Total BCI change"] + [n for n, _ in parts_c], [tot] + vals, [PUR, "0085CA", "00B388", PNK, "6D5F8F", "8C7BB0", "1A0524"], fmt='0.0"pp"', series="pp")
+    ind = [("UK industry", "ukind"), ("EU industry", "ind_eu"), ("Non-EU industry", "ind_non")]
+    s = deck.body("Part 1 · Commercialisation", "Industry funding to universities", "£m, real 2024/25 prices (total for the place)",
+                  panel=(gbp(sum((D.series(lvl, area, k).iloc[D.ty] or 0) for _, k in ind)), f"funds from industry, {y}", "Funds for university R&D from UK, EU and non-EU industry (HE-BCI)."))
+    stacked_col_chart(deck, s, YEARS, [(n, (D.series(lvl, area, k) / 1000).round(2).tolist()) for n, k in ind], [PUR, "0085CA", PNK])
+    s = deck.body("Part 1 · Spin-outs", "New and surviving spin-outs", "Spin-outs active after 3+ years and newly registered, totals",
+                  panel=(str(int(D.series(lvl, area, "spin").iloc[D.ty] or 0)), f"surviving spin-outs, {y}", f"{int(D.series(lvl, area, 'sp_new').iloc[D.ty] or 0)} newly registered in the year (CPM definition)."))
+    line_chart(deck, s, YEARS, [("Active after 3 years", D.series(lvl, area, "spin").tolist()), ("Newly registered", D.series(lvl, area, "sp_new").tolist())], [PNK, "0085CA"], fmt="0")
+    s = deck.body("Part 1 · Spin-outs", "Spin-outs, staff and student start-ups", "Firms active after 3+ years, totals")
+    stacked_col_chart(deck, s, YEARS, [("Spin-outs", D.series(lvl, area, "spin").tolist()), ("Staff start-ups", D.series(lvl, area, "staff_su").tolist()), ("Student start-ups", D.series(lvl, area, "stud_su").tolist())], [PUR, PNK, "0085CA"])
+    fte = D.series(lvl, area, "sp_fte"); nsp = D.series(lvl, area, "spin")
+    s = deck.body("Part 1 · Spin-outs", "Employment in spin-outs and start-ups", "Estimated current employment (FTE) of active firms",
+                  panel=(f"{int(fte.iloc[D.ty] or 0):,}", f"FTE in spin-outs, {y}", f"{(fte.iloc[D.ty]/nsp.iloc[D.ty]):.1f} FTE per surviving spin-out." if nsp.iloc[D.ty] else ""))
+    stacked_col_chart(deck, s, YEARS, [("Spin-outs", fte.tolist()), ("Staff start-ups", D.series(lvl, area, "staff_fte").tolist()), ("Student start-ups", D.series(lvl, area, "stud_fte").tolist())], [PUR, PNK, "0085CA"])
+    s = deck.body("Part 1 · Spin-outs", "Spin-outs and external investment", "Estimated external investment received by active spin-outs, £m, real prices",
+                  panel=(gbp(D.series(lvl, area, "ext").iloc[D.ty]), f"external investment, {y}", "Real 2024/25 prices; one anomalous provider return is excluded."))
+    stacked_col_chart(deck, s, YEARS, [("External investment (£m)", [round((v or 0) / 1000, 1) if pd.notna(v) else 0 for v in D.series(lvl, area, "ext").tolist()])], [PUR])
+
+    # ───────── PART 2: comparisons ─────────
+    reg = D.region_of(lvl, area)
+    nm, ser_a = berd_series(D, [area, reg])
+    _, ser_u = berd_series(D, ["United Kingdom"]); _, ser_e = berd_series(D, ["England"])
+    if ser_a and ser_u:
+        yrs_b = sorted(ser_a)
+        s = deck.body("Part 2 · Context", "Business R&D: the backdrop to collaboration", f"ONS BERD, real terms, indexed {yrs_b[0]} = 100",
+                      panel=(pct((ser_a[yrs_b[-1]] / ser_a[yrs_b[0]] - 1) * 100, 1, True), f"change in business R&D, {nm}, {yrs_b[0]}–{yrs_b[-1]}" + ("" if nm == area else " (region)"), f"UK: {pct((ser_u[yrs_b[-1]]/ser_u[yrs_b[0]]-1)*100,1,True)}." + (f" England: {pct((ser_e[yrs_b[-1]]/ser_e[yrs_b[0]]-1)*100,1,True)}." if ser_e else "")),
+                      source="ONS BERD 2024. Converted to real terms with the CPM price index.")
+        sers = [(nm, [round(ser_a[k] / ser_a[yrs_b[0]] * 100, 1) for k in yrs_b])]
+        cols_b = [PNK]
+        if ser_e: sers.append(("England", [round(ser_e[k] / ser_e[yrs_b[0]] * 100, 1) for k in yrs_b])); cols_b.append("3A6EA5")
+        sers.append(("United Kingdom", [round(ser_u[k] / ser_u[yrs_b[0]] * 100, 1) for k in yrs_b])); cols_b.append(MID)
+        line_chart(deck, s, [str(k) for k in yrs_b], sers, cols_b, fmt="0")
+    ind_rows = (D.berd.get("industry") or {}).get("rows")
+    if ind_rows:
+        rr = sorted(ind_rows, key=lambda r: -r["pct"])
+        s = deck.body("Part 2 · Context", "Where UK business R&D is growing and falling", f"% change by broad industry group, {D.berd['industry']['base']} to {D.berd['industry']['last']}, real terms",
+                      source="ONS BERD 2024, Table 5.")
+        bar_chart(deck, s, [r["g"].split(";")[0][:40] for r in rr], [round(r["pct"], 1) for r in rr], [("00B388" if r["pct"] >= 0 else PNK) for r in rr], fmt='0.0"%"', series="%")
+
     t = D.tab[(lvl, "all")].xs(y, level=1)
     uk = D.uk_all.loc[y]
     b = t.loc[area, "bci"]
@@ -408,7 +519,7 @@ def build_area_deck(D, lvl, area, path):
     pu = D.uk_all["bci"] / D.n_uk / 1000
     pe = D.eng_all["bci"] / D.n_eng / 1000
     nu = int(t.loc[area, "n"])
-    s = deck.body(f"Place · {LVL_TXT[lvl]}", f"Business collaboration income per university in {area}",
+    s = deck.body(f"Part 2 · {LVL_TXT[lvl]}", f"Business collaboration income per university in {area}",
                   "£m per reporting university, real 2024/25 prices",
                   panel=(gbp(b / max(nu, 1)), "BCI per university", f"{nu} universities reporting in {y}. UK {gbp(uk.bci / D.n_uk[y])}; England {gbp(D.eng_all.loc[y].bci / D.n_eng[y])}. Small providers pull averages down."),
                   source="Per-university = total divided by providers reporting that year.")
@@ -420,7 +531,7 @@ def build_area_deck(D, lvl, area, path):
     ia = sa / sa.dropna().iloc[0] * 100 if sa.notna().any() and sa.dropna().iloc[0] > 0 else sa
     iu = su / su.dropna().iloc[0] * 100
     g, gu = cagr(sa.iloc[D.ty - 5], sa.iloc[D.ty]), cagr(su.iloc[D.ty - 5], su.iloc[D.ty])
-    s = deck.body("Place · trend", f"BCI in {area}: {pct(g,1,True)} a year over five years" if not pd.isna(g) else f"BCI in {area} over time",
+    s = deck.body("Part 2 · trend", f"BCI in {area}: {pct(g,1,True)} a year over five years" if not pd.isna(g) else f"BCI in {area} over time",
                   "Index of BCI, first year = 100, core 136 universities (stable provider set)",
                   panel=(pct(g, 1, True) if not pd.isna(g) else "n/a", "5-year CAGR, core universities", f"UK core universities: {pct(gu,1,True)} a year. Series shown indexed so small and large places can be compared."))
     line_chart(deck, s, YEARS, [(area, ia.tolist()), ("UK", iu.tolist())], [PNK, MID], fmt="0")
@@ -435,13 +546,58 @@ def build_area_deck(D, lvl, area, path):
             tot = sum(r[kk] for _, kk, _ in parts)
             vals.append(round(float(r[k]) / tot * 100, 1) if tot else 0)
         ser.append((n, vals))
-    s = deck.body("Place · composition", "What the collaboration income is for", f"Mix of BCI by stream, {y}",
+    s = deck.body("Part 2 · composition", "What the collaboration income is for", f"Mix of BCI by stream, {y}",
                   panel=(pct(t.loc[area, "sme"] / b * 100, 0) if b else "–", "of BCI comes from SMEs", f"UK: {pct(uk.sme/uk.bci*100,0)}. BCI excludes CPD and non-commercial income."))
     stack100_chart(deck, s, [area, "UK"], ser, [c for *_, c in parts])
 
+
+    # growth bands, place by place
+    colr = {"itl1": "a_itl1", "itl2": "a_itl2", "ttwa": "a_ttwa"}[lvl]
+    prov_area = D.d.drop_duplicates("ukprn").set_index("ukprn")[colr]
+    rows_b = [("All providers (UK)", *band_shares(D, D.band.index)), (area, *band_shares(D, prov_area[prov_area == area].index))]
+    oth = []
+    for a in prov_area.dropna().unique():
+        if a == area: continue
+        n_, sh_ = band_shares(D, prov_area[prov_area == a].index)
+        if n_ >= (1 if lvl == "itl1" else 4): oth.append((a, n_, sh_))
+    oth.sort(key=lambda r: -(r[2][0] + r[2][1]))
+    rows_b += oth[:12 if lvl == "itl1" else 14]
+    s = deck.body("Part 2 · Growth", "How many universities are growing or shrinking?", f"Share of universities by five-year growth band, total BCI, {YEARS[D.ty-5]} to {y}",
+                  panel=(str(rows_b[1][1]), f"universities counted in {area}", "Significant = 10%+ a year, moderate 3–10%, stable within ±3%. Universities with under £100k in the base year are excluded. The picked place is the second bar."))
+    cd = CategoryChartData(); cd.categories = [f"{r[0][:34]} ({r[1]})" for r in rows_b]
+    for i, (bn, _) in enumerate(BANDS): cd.add_series(bn, [r[2][i] for r in rows_b])
+    gf = s.shapes.add_chart(XL_CHART_TYPE.BAR_STACKED_100, *[Emu(v) for v in CH], cd)
+    ch = gf.chart; style_chart(ch, legend=True, size=9); ch.category_axis.reverse_order = True
+    ch.category_axis.tick_label_position = XL_TICK_LABEL_POSITION.LOW
+    ch.plots[0].gap_width = 40
+    for i, (_, c) in enumerate(BANDS):
+        ch.series[i].format.fill.solid(); ch.series[i].format.fill.fore_color.rgb = rgb(c)
+    # scatter: BCI per local job vs knowledge-intensive share
+    tt_b = D.latest("ttwa", "bci")
+    ctx = D.ttwa_ctx
+    pts = [(n, float(ctx.loc[n, "ttwa_ki_share"]) * 100, float(tt_b[n]) * 1000 / float(ctx.loc[n, "ttwa_jobs_bres2024"])) for n in tt_b.index
+           if n in ctx.index and tt_b[n] > 0 and pd.notna(ctx.loc[n, "ttwa_ki_share"]) and pd.notna(ctx.loc[n, "ttwa_jobs_bres2024"]) and ctx.loc[n, "ttwa_jobs_bres2024"] > 0]
+    mine = set(D.d[(D.d[colr] == area)]["a_ttwa"].dropna()) if lvl != "ttwa" else {area}
+    if pts:
+        xs = XyChartData()
+        so = xs.add_series("Other travel-to-work areas")
+        for n, x_, y_ in pts:
+            if n not in mine: so.add_data_point(x_, y_)
+        sm = xs.add_series(area)
+        for n, x_, y_ in pts:
+            if n in mine: sm.add_data_point(x_, y_)
+        s = deck.body("Part 2 · Local economy", "Collaboration income and the knowledge economy", f"BCI per local job (£) against knowledge-intensive employment (%), {y}",
+                      panel=(str(len(pts)), "travel-to-work areas with a university", f"{area} is shown in pink" + ("" if any(n in mine for n, *_ in pts) else " (it has no travel-to-work-area data)") + ". Income is recorded where the university is based."))
+        gf = s.shapes.add_chart(XL_CHART_TYPE.XY_SCATTER, *[Emu(v) for v in CH], xs)
+        ch = gf.chart; style_chart(ch, legend=True)
+        ch.value_axis.major_gridlines.format.line.color.rgb = rgb("EEEBF1")
+        for sr, c, sz in zip(ch.plots[0].series, ["B8B0C9", PNK], [7, 13]):
+            sr.marker.size = sz; sr.marker.format.fill.solid(); sr.marker.format.fill.fore_color.rgb = rgb(c)
+            sr.format.line.fill.background()
+
     # 4 universities
     u = D.unis(lvl, area).head(12)
-    s = deck.body("Place · universities", f"Universities in {area}", f"Largest universities by BCI, {y}",
+    s = deck.body("Part 2 · universities", f"Universities in {area}", f"Largest universities by BCI, {y}",
                   panel=(str(int(t.loc[area, "n"])), f"universities reporting in {y}", f"{int(t.loc[area,'spin']) if pd.notna(t.loc[area,'spin']) else 0} surviving spin-outs (3+ years, CPM definition)."))
     rows = [[r.he_provider[:46], (r.cluster.split(" (")[0] if isinstance(r.cluster, str) else "–")[:34], gbp(r.bci_total), "–" if pd.isna(r.n_spinouts_surv3) else int(r.n_spinouts_surv3)] for r in u.itertuples()]
     table(deck, s, ["University", "BCI portfolio group", "BCI", "Spin-outs"], rows, [3300000, 2500000, 1000000, 900000])
@@ -459,14 +615,14 @@ def build_area_deck(D, lvl, area, path):
                 ["Employee jobs (BRES 2024)", pc("ttwa_jobs_bres2024"), f"{allc.ttwa_jobs_bres2024.median():,.0f}"],
                 ["Composite place score (percentile)", pc("ttwa_composite_pct"), "50"],
                 ["Industrial-legacy employment share (%)", pc("ttwa_legacy_share", 100), f"{allc.ttwa_legacy_share.median()*100:.0f}"]]
-        s = deck.body("Place · local economy", f"The local economy around {area}", "Selected local-economy measures against the median university TTWA",
+        s = deck.body("Part 2 · local economy", f"The local economy around {area}", "Selected local-economy measures against the median university TTWA",
                       panel=(str(c.ttwa_type)[:26], "type of local economy", "From NCUB's five-way TTWA typology (productivity, knowledge intensity and industrial legacy)."))
         table(deck, s, ["Measure", area[:20], "Median"], rows, [4300000, 1900000, 1500000])
     else:
         col = {"itl1": "a_itl1", "itl2": "a_itl2"}[lvl]
         x = D.d[(D.d[col] == area) & (D.d.academic_year == y)]
         tt = x.groupby("ttwa_name")["bci_total"].sum().sort_values(ascending=False).head(10)
-        s = deck.body("Place · travel-to-work areas", f"Where the income sits inside {area}", f"BCI by travel-to-work area, £m, {y}",
+        s = deck.body("Part 2 · travel-to-work areas", f"Where the income sits inside {area}", f"BCI by travel-to-work area, £m, {y}",
                       panel=(str(x["ttwa_name"].nunique()), "travel-to-work areas with a university", "Universities without a campus TTWA in the panel are not shown."))
         if len(tt):
             bar_chart(deck, s, [n[:34] for n in tt.index], [round(v / 1000, 1) for v in tt.values], [PNK] * len(tt), fmt='"£"#,##0.0"m"', series="BCI £m")
@@ -517,7 +673,7 @@ def build_uk_deck(D, path):
     ser_ = xs.add_series("University TTWAs")
     for a in tt.index[ok.reindex(tt.index).fillna(False)]:
         ser_.add_data_point(float(ctx.loc[a, "ttwa_ki_share"] * 100), float(per[a]))
-    s = deck.body("Place · local economy", "Collaboration income per local job vs knowledge-intensive employment",
+    s = deck.body("Part 2 · local economy", "Collaboration income per local job vs knowledge-intensive employment",
                   f"BCI per job (£) against knowledge-intensive employment share (%), {y}",
                   panel=(f"ρ = {rho:.2f}", "rank correlation", "Each point is a travel-to-work area with a university. Income is recorded where the university is based, not where partners are."))
     gf = s.shapes.add_chart(XL_CHART_TYPE.XY_SCATTER, *[Emu(v) for v in CH], xs)
