@@ -502,6 +502,10 @@ _logo_c = _read("logo_c.b64").strip() if os.path.exists(os.path.join(HERE, "temp
 _logo_w = _read("logo_w.b64").strip() if os.path.exists(os.path.join(HERE, "templates", "logo_w.b64")) else ""
 place_js = _read("place.js").replace("__PL_LOGO__", _logo_c).replace("__PL_LOGO_W__", _logo_w)
 tpl = tpl.replace("/*__PLACE_JS__*/", place_js)
+_pp = os.path.join(HERE, "vendor", "pptxgen.bundle.js")
+if os.path.exists(_pp):
+    with open(_pp, encoding="utf-8") as _f:
+        tpl = tpl.replace("/*__PPTXGEN__*/", _f.read().replace("</script", "<\\/script"))
 html = tpl.replace("__DATA__", json.dumps(data, separators=(",", ":")))
 with open(OUT_PATH, "w", encoding="utf-8") as f:
     f.write(html)

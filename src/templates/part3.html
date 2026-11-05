@@ -28,7 +28,7 @@ const deltaHtml = p => {
 /* ---------- tab switching (lazy render) ---------- */
 const rendered = {};
 const renderers = {home:renderHome, context:renderContext, framework:renderFramework,
-                   trends:renderTrends, explorer:renderExplorer,
+                   trends:renderTrends, place:renderPlace, explorer:renderExplorer,
                    cases:renderCases};
 function go(tab, subOpt){
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
@@ -368,7 +368,7 @@ function drawPareto(){
 
 /* ---------- findings sub-tabs ---------- */
 const subRendered={overview:true};
-const subRenderers={spinouts:renderSpinouts,cagr:renderCagr,gtr:renderGtr,place:renderPlace};
+const subRenderers={spinouts:renderSpinouts,cagr:renderCagr,gtr:renderGtr};
 function initSubnav(){
   document.getElementById('findSubnav').addEventListener('click',e=>{
     const b=e.target.closest('button'); if(!b) return;
@@ -1822,7 +1822,7 @@ function downloadChartXlsx(el){
   }
 }
 function addTrendsXlsButtons(){
-  document.querySelectorAll('#tab-trends .chart').forEach(el=>{
+  document.querySelectorAll('#tab-trends .chart, #tab-place .chart').forEach(el=>{
     if(!el.id || el.dataset.xls) return;
     el.dataset.xls='1';
     const btn=document.createElement('button');

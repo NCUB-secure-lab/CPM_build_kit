@@ -3,8 +3,7 @@ build_place_reports.py — editable NCUB-style PowerPoint reports for place anal
 
 Reads input/master_panel.xlsx and the NCUB slide template input/NCUB_guide_presentations.pptx
 and writes to output/place_reports/:
-    UK_place_overview.pptx
-    ITL1/<region>.pptx, ITL2/<sub-region>.pptx, TTWA/<area>.pptx
+        ITL1/<region>.pptx, ITL2/<sub-region>.pptx, TTWA/<area>.pptx
 
 All charts are native PowerPoint charts (right-click → Edit data), all text is editable.
 
@@ -51,6 +50,10 @@ class Data:
         self.core = d["inst_panel"] == "core"
         self.uk_all = self._uk(d)
         self.uk_core = self._uk(d[self.core])
+        eng = d[~d["itl1_name"].isin(["Scotland", "Wales", "Northern Ireland"])]
+        self.eng_all, self.eng_core = self._uk(eng), self._uk(eng[eng.inst_panel == "core"])
+        rep = lambda x: x[x["bci_total"].notna()].groupby("academic_year")["ukprn"].nunique().reindex(YEARS)
+        self.n_uk, self.n_eng = rep(d), rep(eng)
         self.tab = {}
         for lvl in ("itl1", "itl2", "ttwa"):
             self.tab[(lvl, "all")] = self._area_tab(lvl, False)
@@ -141,9 +144,9 @@ def area_insights(D, lvl, area):
     uk = D.uk_all.loc[y]
     out = []
     b = t.loc[area, "bci"]
-    rank = int((t["bci"] > b).sum()) + 1
-    n = len(t)
-    out.append(("Scale", f"{area} generated {gbp(b)} of business collaboration income in {y}: #{rank} of {n} {LVL_TXT[lvl]}s and {b/uk.bci*100:.1f}% of the UK total, across {int(t.loc[area,'n'])} universities."))
+    nu = int(t.loc[area, "n"])
+    eng = D.eng_all.loc[y]
+    out.append(("Scale and income per university", f"{area} has {nu} universities reporting in {y} and generated {gbp(b)} of business collaboration income ({b/uk.bci*100:.1f}% of the UK total): {gbp(b/nu)} per university, against {gbp(uk.bci/D.n_uk[y])} across the UK and {gbp(eng.bci/D.n_eng[y])} in England."))
     a_ac = t.loc[area, "acad"]
     if a_ac and a_ac > 0 and uk.acad:
         lq = (b / uk.bci) / (a_ac / uk.acad)
@@ -169,8 +172,7 @@ def area_insights(D, lvl, area):
         jobs = c.ttwa_jobs_bres2024
         if pd.notna(jobs) and jobs > 0:
             per = t["bci"] * 1000 / D.ttwa_ctx.reindex(t.index).ttwa_jobs_bres2024
-            r = int((per > per[area]).sum()) + 1
-            out.append(("Local economy", f"A {str(c.ttwa_type).lower()} with {jobs:,.0f} jobs. BCI per local job is £{per[area]:,.0f}, #{r} of {per.notna().sum()} university TTWAs."
+            out.append(("Local economy", f"A {str(c.ttwa_type).lower()} with {jobs:,.0f} jobs. BCI per local job is £{per[area]:,.0f} (median university TTWA £{per.median():,.0f})."
                         + (f" Knowledge-intensive jobs: {c.ttwa_ki_share*100:.0f}% of employment." if pd.notna(c.ttwa_ki_share) else "")))
     elif lvl == "itl2" and area in D.itl2_berd.index and pd.notna(D.itl2_berd[area]):
         out.append(("Local economy", f"Business R&D per job in this sub-region is £{D.itl2_berd[area]:,.0f} (ONS BERD 2024)."))
@@ -400,18 +402,17 @@ def build_area_deck(D, lvl, area, path):
     t = D.tab[(lvl, "all")].xs(y, level=1)
     uk = D.uk_all.loc[y]
     b = t.loc[area, "bci"]
-    # 1 ranking
-    rk = t["bci"].sort_values(ascending=False)
-    top = list(rk.index[:12])
-    if area not in top:
-        top = top[:11] + [area]
-    names = [(n if len(n) < 38 else n[:36] + "…") for n in top]
-    cols = [("FF0090" if n == area else (REG_COL.get(D.region_of(lvl, n) or "", MID) if lvl != "itl1" else MID)) for n in top]
-    rank = int((rk > b).sum()) + 1
-    s = deck.body(f"Place · {LVL_TXT[lvl]}s", f"{area} ranks #{rank} of {len(rk)} {LVL_TXT[lvl]}s for business collaboration income",
-                  f"Business collaboration income, £m, {y} (highlighted: {area})",
-                  panel=(gbp(b), f"BCI in {area}", f"{b/uk.bci*100:.1f}% of the UK total of {gbp(uk.bci)}. {int(t.loc[area,'n'])} universities reporting."))
-    bar_chart(deck, s, names, [round(rk[n] / 1000, 1) for n in top], cols, fmt='"£"#,##0.0"m"', series="BCI £m")
+    # 1 BCI per university vs UK and England
+    sa_n = D.series(lvl, area, "n")
+    pa = D.series(lvl, area, "bci") / sa_n * 1 / 1000
+    pu = D.uk_all["bci"] / D.n_uk / 1000
+    pe = D.eng_all["bci"] / D.n_eng / 1000
+    nu = int(t.loc[area, "n"])
+    s = deck.body(f"Place · {LVL_TXT[lvl]}", f"Business collaboration income per university in {area}",
+                  "£m per reporting university, real 2024/25 prices",
+                  panel=(gbp(b / max(nu, 1)), "BCI per university", f"{nu} universities reporting in {y}. UK {gbp(uk.bci / D.n_uk[y])}; England {gbp(D.eng_all.loc[y].bci / D.n_eng[y])}. Small providers pull averages down."),
+                  source="Per-university = total divided by providers reporting that year.")
+    line_chart(deck, s, YEARS, [(area, pa.tolist()), ("UK", pu.tolist()), ("England", pe.tolist())], [PNK, MID, "3A6EA5"], fmt="0.0")
 
     # 2 trend indexed (core set, stable providers)
     sa = D.series(lvl, area, "bci", core=True)
@@ -550,8 +551,6 @@ def main():
         only = sys.argv[sys.argv.index("--only") + 1].lower()
     D = Data()
     n = 0
-    if only in (None, "uk"):
-        build_uk_deck(D, os.path.join(OUT, "UK_place_overview.pptx")); n += 1
     for lvl in ("itl1", "itl2", "ttwa"):
         if only not in (None, lvl):
             continue
